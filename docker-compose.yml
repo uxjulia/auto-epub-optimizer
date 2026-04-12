@@ -1,0 +1,54 @@
+# epub-optimizer docker-compose
+#
+# Copy .env.example to .env and set the HOST paths before running:
+#   cp .env.example .env
+#   # edit .env, then:
+#   docker compose up -d
+#
+# Inside the containers, directories are always mounted at fixed paths
+# (/bookdrop, /output, /destination, /calibre). The env vars in this file
+# point the scripts to those fixed paths; you only need to configure the
+# HOST-side paths in your .env.
+
+services:
+
+  epub-watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.watcher
+    restart: unless-stopped
+    environment:
+      EPUB_OUTPUT_DIR: /output
+      WATCHER_DEST_DIR: /destination
+      WATCHER_LOG_FILE: /logs/epub-watcher.log
+    volumes:
+      - output:/output
+      - ${WATCHER_DEST_DIR:?Set WATCHER_DEST_DIR in .env}:/destination
+      - watcher-logs:/logs
+
+  epub-optimizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - epub-watcher
+    environment:
+      BOOKDROP_DIR: /bookdrop
+      EPUB_OUTPUT_DIR: /output
+      # CALIBRE_WATCH_FOLDER: /calibre  # uncomment if using separate Calibre watch folder and add the volume below
+      OPTIMIZER_SCRIPT: /app/cli/optimize.js
+      OPTIMIZER_LOG_FILE: /logs/epub-optimizer.log
+      POLL_INTERVAL: ${POLL_INTERVAL:-5}
+      KEEP_DAYS: ${KEEP_DAYS:-5}
+    volumes:
+      - ${BOOKDROP_DIR:?Set BOOKDROP_DIR in .env}:/bookdrop
+      - output:/output
+      # - ${CALIBRE_WATCH_FOLDER}:/calibre  # uncomment if using separate Calibre watch folder
+      - optimizer-logs:/logs
+
+volumes:
+  # Shared volume between optimizer (writer) and watcher (reader)
+  output:
+  optimizer-logs:
+  watcher-logs:

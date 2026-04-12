@@ -1,0 +1,18 @@
+[Unit]
+Description=EPUB Optimizer Output Watcher
+Documentation=Watches EPUB_OUTPUT_DIR and moves finished files to WATCHER_DEST_DIR
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/epub-watcher.sh
+Restart=on-failure
+RestartSec=5s
+
+# Keep the service alive even if the watch dir temporarily disappears
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=epub-watcher
+
+[Install]
+WantedBy=default.target

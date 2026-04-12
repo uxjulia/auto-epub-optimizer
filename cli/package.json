@@ -1,0 +1,17 @@
+{
+  "name": "epub-optimizer",
+  "version": "1.0.0",
+  "description": "Optimize EPUBs for CrossPoint e-ink reader — CLI tool",
+  "main": "optimize.js",
+  "type": "commonjs",
+  "bin": {
+    "epub-optimize": "./optimize.js"
+  },
+  "scripts": {
+    "start": "node optimize.js"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "sharp": "^0.33.0"
+  }
+}

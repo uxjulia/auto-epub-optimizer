@@ -1,0 +1,2131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EPUB Optimizer</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: #161621;
+        color: #e0e0e0;
+        min-height: 100vh;
+        padding: 24px;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #fff;
+        margin-bottom: 4px;
+      }
+
+      .subtitle {
+        font-size: 0.85rem;
+        color: #888;
+        margin-bottom: 24px;
+      }
+
+      .container {
+        max-width: 700px;
+        margin: 0 auto;
+      }
+
+      /* Drop zone */
+      .drop-zone {
+        border: 2px dashed #444;
+        border-radius: 4px;
+        padding: 40px 20px;
+        text-align: center;
+        cursor: pointer;
+        transition:
+          border-color 0.2s,
+          background 0.2s;
+        background: #16213e;
+        margin-bottom: 16px;
+        position: relative;
+      }
+      .drop-zone:hover,
+      .drop-zone.drag-over {
+        border-color: #357f9b;
+        background: #1e2a4a;
+      }
+      .drop-zone input[type="file"] {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 100%;
+      }
+      .drop-zone-icon {
+        font-size: 2.5rem;
+        margin-bottom: 8px;
+      }
+      .drop-zone-text {
+        color: #aaa;
+        font-size: 0.9rem;
+      }
+      .drop-zone-text strong {
+        color: #357f9b;
+      }
+
+      /* File list */
+      #fileList {
+        display: none;
+        background: #16213e;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 16px;
+        max-height: 150px;
+        overflow-y: auto;
+      }
+      .file-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+        font-size: 0.85rem;
+        color: #ccc;
+      }
+      .file-item-icon {
+        color: #357f9b;
+      }
+
+      /* Settings */
+      .settings-panel {
+        background: #16213e;
+        border-radius: 4px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .settings-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        user-select: none;
+        margin-bottom: 0;
+      }
+      .settings-header h2 {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #ccc;
+      }
+      .settings-header .toggle-icon {
+        color: #888;
+        font-size: 0.8rem;
+        transition: transform 0.2s;
+      }
+      .settings-body {
+        display: none;
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .setting {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .setting label {
+        font-size: 0.8rem;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .setting input[type="range"] {
+        accent-color: #357f9b;
+        width: 100%;
+      }
+      .setting input[type="number"],
+      .setting select {
+        background: #dbdbdb;
+        border: 1px solid #444;
+        border-radius: 6px;
+        color: #161621;
+        padding: 6px 10px;
+        font-size: 0.9rem;
+        width: 100%;
+      }
+      .setting .range-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .setting .range-val {
+        font-size: 0.9rem;
+        color: #357f9b;
+        font-weight: 600;
+        min-width: 40px;
+        text-align: right;
+      }
+      .setting-full {
+        grid-column: 1 / -1;
+      }
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .toggle {
+        position: relative;
+        width: 40px;
+        height: 22px;
+      }
+      .toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .toggle-slider {
+        position: absolute;
+        inset: 0;
+        background: #444;
+        border-radius: 22px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .toggle-slider::before {
+        content: "";
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        left: 3px;
+        top: 3px;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.2s;
+      }
+      .toggle input:checked + .toggle-slider {
+        background: #357f9b;
+      }
+      .toggle input:checked + .toggle-slider::before {
+        transform: translateX(18px);
+      }
+
+      /* Action button */
+      #convertBtn {
+        width: 100%;
+        padding: 14px;
+        background: #357f9b;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          background 0.2s,
+          opacity 0.2s;
+        margin-bottom: 16px;
+      }
+      #convertBtn:hover:not(:disabled) {
+        background: #5a52e0;
+      }
+      #convertBtn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      /* Log */
+      #logSection {
+        display: none;
+        background: #16213e;
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .log-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      .log-header h2 {
+        font-size: 0.9rem;
+        color: #888;
+      }
+      #clearLogBtn {
+        background: none;
+        border: none;
+        color: #666;
+        cursor: pointer;
+        font-size: 0.8rem;
+      }
+      #clearLogBtn:hover {
+        color: #aaa;
+      }
+      #logContainer {
+        font-family: "Courier New", monospace;
+        font-size: 0.8rem;
+        max-height: 300px;
+        overflow-y: auto;
+        line-height: 1.6;
+      }
+      .log-entry {
+        padding: 1px 0;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .log-ts {
+        color: #555;
+      }
+      .log-tag {
+        font-weight: 700;
+        font-size: 0.7rem;
+        padding: 1px 5px;
+        border-radius: 3px;
+        background: #2a2a4a;
+      }
+      .log-tag.convert {
+        background: #1a3a5c;
+        color: #64b5f6;
+      }
+      .log-tag.split {
+        background: #1a4a3a;
+        color: #81c784;
+      }
+      .log-tag.fix {
+        background: #3a3a1a;
+        color: #fff176;
+      }
+      .log-tag.skip {
+        background: #2a2a2a;
+        color: #888;
+      }
+      .log-tag.error {
+        background: #4a1a1a;
+        color: #ef9a9a;
+      }
+      .log-tag.info {
+        background: #2a2a4a;
+        color: #ce93d8;
+      }
+      .log-tag.done {
+        background: #1a4a1a;
+        color: #a5d6a7;
+      }
+      .log-msg {
+        color: #ccc;
+        flex: 1;
+      }
+      .log-msg strong {
+        color: #e0e0e0;
+      }
+      .log-detail {
+        color: #666;
+      }
+      .log-summary {
+        margin-top: 12px;
+        background: #dbdbdb;
+        border-radius: 8px;
+        padding: 12px;
+      }
+      .log-summary-title {
+        font-weight: 600;
+        color: #aaa;
+        margin-bottom: 6px;
+        font-size: 0.85rem;
+      }
+      .log-summary table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .log-summary td {
+        padding: 3px 6px;
+        color: #bbb;
+      }
+      .log-summary td:last-child {
+        text-align: right;
+        color: #e0e0e0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>EPUB Optimizer</h1>
+      <p class="subtitle">
+        Optimizes EPUB images for e-ink readers like the Xteink X4 — runs
+        locally in your browser, no device needed.
+      </p>
+
+      <div class="drop-zone" id="dropZone">
+        <input type="file" id="fileInput" accept=".epub" multiple />
+        <div class="drop-zone-icon">📚</div>
+        <div class="drop-zone-text">
+          Drop <strong>.epub</strong> files here or click to select
+        </div>
+      </div>
+
+      <div id="fileList"></div>
+
+      <div class="settings-panel">
+        <div class="settings-header" onclick="toggleSettings()">
+          <h2>⚙️ Conversion Settings</h2>
+          <span class="toggle-icon" id="settingsToggleIcon">▼</span>
+        </div>
+        <div class="settings-body" id="settingsBody">
+          <div class="setting">
+            <label>JPEG Quality</label>
+            <div class="range-row">
+              <input
+                type="range"
+                id="quality"
+                min="1"
+                max="100"
+                value="85"
+                oninput="
+                  document.getElementById('qualityVal').textContent =
+                    this.value + '%'
+                "
+              />
+              <span class="range-val" id="qualityVal">85%</span>
+            </div>
+          </div>
+
+          <div class="setting">
+            <label>Overlap (for splits)</label>
+            <div class="range-row">
+              <input
+                type="range"
+                id="overlap"
+                min="5"
+                max="25"
+                step="5"
+                value="5"
+                oninput="
+                  document.getElementById('overlapVal').textContent =
+                    this.value + '%'
+                "
+              />
+              <span class="range-val" id="overlapVal">5%</span>
+            </div>
+          </div>
+
+          <div class="setting">
+            <label>Max Width (px)</label>
+            <input
+              type="number"
+              id="maxWidth"
+              value="480"
+              min="100"
+              max="4000"
+            />
+          </div>
+
+          <div class="setting">
+            <label>Max Height (px)</label>
+            <input
+              type="number"
+              id="maxHeight"
+              value="800"
+              min="100"
+              max="4000"
+            />
+          </div>
+
+          <div class="setting">
+            <label>Split Mode</label>
+            <select id="splitMode">
+              <option value="0">None</option>
+              <option value="1">
+                H-Split (wide images — rotate &amp; split)
+              </option>
+              <option value="2">
+                V-Split (tall images — split vertically)
+              </option>
+            </select>
+          </div>
+
+          <div class="setting">
+            <label>Rotation Direction</label>
+            <select id="handedness">
+              <option value="right">Clockwise (right-handed)</option>
+              <option value="left">Counter-clockwise (left-handed)</option>
+            </select>
+          </div>
+
+          <div class="setting">
+            <label>Grayscale</label>
+            <div class="toggle-row">
+              <label class="toggle">
+                <input type="checkbox" id="grayscale" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <span style="font-size: 0.85rem; color: #aaa"
+                >Convert images to grayscale</span
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button id="convertBtn" disabled>Optimize &amp; Download</button>
+
+      <div id="logSection">
+        <div class="log-header">
+          <h2>📋 Conversion Log</h2>
+          <button id="clearLogBtn" onclick="clearLog()">Clear</button>
+        </div>
+        <div id="logContainer"></div>
+      </div>
+    </div>
+
+    <script src="jszip.min.js"></script>
+    <script>
+      "use strict";
+
+      // ── Settings ─────────────────────────────────────────────────────────────────
+      let MAX_WIDTH = 480;
+      let MAX_HEIGHT = 800;
+      let JPEG_QUALITY = 85;
+      let ENABLE_GRAYSCALE = true;
+      let HANDEDNESS = "right";
+      let OVERLAP_PERCENT = 5;
+      let SPLIT_MODE = 0; // 0=None, 1=H-Split, 2=V-Split
+
+      // State for per-image overrides (empty = all Normal / state 0)
+      const imageStates = {};
+
+      // Cancel flag (not wired to UI in this tool, but referenced by convertEpubFile)
+      let operationCancelled = false;
+
+      // ── Logging ───────────────────────────────────────────────────────────────────
+      let logStartTime = null;
+      let conversionStats = {
+        images: 0,
+        splits: 0,
+        splitParts: 0,
+        fixes: 0,
+        skipped: 0,
+        errors: 0,
+        originalSize: 0,
+        newSize: 0,
+      };
+
+      const logSection = document.getElementById("logSection");
+      const logContainer = document.getElementById("logContainer");
+
+      function formatBytes(b) {
+        if (!b) return "0 B";
+        const k = 1024,
+          s = ["B", "KB", "MB", "GB"];
+        const i = Math.floor(Math.log(b) / Math.log(k));
+        return (b / Math.pow(k, i)).toFixed(1) + " " + s[i];
+      }
+
+      function getTimestamp() {
+        if (!logStartTime) return "[00:00.0]";
+        const elapsed = (Date.now() - logStartTime) / 1000;
+        const mins = Math.floor(elapsed / 60)
+          .toString()
+          .padStart(2, "0");
+        const secs = (elapsed % 60).toFixed(1).padStart(4, "0");
+        return `[${mins}:${secs}]`;
+      }
+
+      function log(message, type = "", tag = "") {
+        const entry = document.createElement("div");
+        entry.className = "log-entry";
+        entry.innerHTML = `
+      <span class="log-ts">${getTimestamp()}</span>
+      ${tag ? `<span class="log-tag ${tag.toLowerCase()}">${tag}</span>` : ""}
+      <span class="log-msg">${message}</span>
+    `;
+        logContainer.appendChild(entry);
+        logContainer.scrollTop = logContainer.scrollHeight;
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function logImage(
+        name,
+        origW,
+        origH,
+        origFormat,
+        origSize,
+        newW,
+        newH,
+        newSize,
+        wasSplit = false,
+        splitCount = 0,
+        partsInfo = null,
+        imageState = 0,
+      ) {
+        const saved = origSize - newSize;
+        const savedPct = ((saved / origSize) * 100).toFixed(0);
+        const stateLabels = ["", "H-Split", "V-Split", "Rotate"];
+        const stateColors = ["", "#3498db", "#e74c3c", "#9b59b6"];
+        const stateLabel = stateLabels[imageState] || "";
+        const stateColor = stateColors[imageState] || "";
+        const stateIndicator =
+          imageState > 0
+            ? ` <span style="color:${stateColor};font-weight:600">[${stateLabel}]</span>`
+            : "";
+        if (wasSplit) {
+          conversionStats.splits++;
+          conversionStats.splitParts += splitCount;
+          let partsDetail = "";
+          if (partsInfo && partsInfo.length > 0) {
+            const baseName = name.replace(/\.[^.]+$/, "");
+            partsDetail = partsInfo
+              .map(
+                (p) =>
+                  `${baseName}${p.suffix}.jpg (${p.width}×${p.height}, ${formatBytes(p.size)})`,
+              )
+              .join(", ");
+          }
+          const savedInfo =
+            saved > 0
+              ? `, <span style="color:#27ae60">-${savedPct}%</span>`
+              : "";
+          log(
+            `<strong>${escapeHtml(name)}</strong>${stateIndicator} <span class="log-detail">(${origW}×${origH} ${origFormat.toUpperCase()}, ${formatBytes(origSize)}) → ${splitCount} parts${savedInfo}</span>`,
+            "",
+            "SPLIT",
+          );
+          if (partsDetail)
+            log(
+              `<span class="log-detail" style="margin-left:20px">↳ ${partsDetail}</span>`,
+              "",
+              "",
+            );
+        } else {
+          conversionStats.images++;
+          const detail =
+            saved > 0
+              ? `<span class="log-detail">(${origW}×${origH} → ${newW}×${newH}, ${formatBytes(origSize)} → ${formatBytes(newSize)}, <span style="color:#27ae60">-${savedPct}%</span>)</span>`
+              : `<span class="log-detail">(${origW}×${origH} → ${newW}×${newH}, ${formatBytes(newSize)})</span>`;
+          log(
+            `<strong>${escapeHtml(name)}</strong>${stateIndicator} ${detail}`,
+            "",
+            "CONVERT",
+          );
+        }
+      }
+
+      function logFix(type, detail) {
+        conversionStats.fixes++;
+        log(
+          `${type}: <span class="log-detail">${detail}</span>`,
+          "success",
+          "FIX",
+        );
+      }
+
+      function logSkip(name, reason) {
+        conversionStats.skipped++;
+        log(
+          `${escapeHtml(name)} <span class="log-detail">(${reason})</span>`,
+          "",
+          "SKIP",
+        );
+      }
+
+      function logError(message) {
+        conversionStats.errors++;
+        log(message, "error", "ERROR");
+      }
+
+      function logSummary(originalSize, newSize, timeElapsed) {
+        const saved = originalSize - newSize;
+        const savedPct = ((saved / originalSize) * 100).toFixed(1);
+        const totalImages = conversionStats.images + conversionStats.splits;
+        const totalOutput = conversionStats.images + conversionStats.splitParts;
+        const summaryHtml = `
+      <div class="log-summary">
+        <div class="log-summary-title">📊 Conversion Summary</div>
+        <table>
+          <tr><td>Images found</td><td>${totalImages}</td></tr>
+          <tr><td>Images output</td><td>${totalOutput}${conversionStats.splitParts > conversionStats.splits ? ` (+${conversionStats.splitParts - conversionStats.splits} from splits)` : ""}</td></tr>
+          <tr><td>EPUB repairs</td><td>${conversionStats.fixes > 0 ? conversionStats.fixes + " fixes" : "None"}</td></tr>
+          ${conversionStats.errors > 0 ? `<tr><td>Errors</td><td style="color:#ef9a9a">${conversionStats.errors}</td></tr>` : ""}
+          <tr><td>Original size</td><td>${formatBytes(originalSize)}</td></tr>
+          <tr><td>Optimized size</td><td>${formatBytes(newSize)}</td></tr>
+          <tr><td>Saved</td><td style="color:${saved > 0 ? "#a5d6a7" : "#ef9a9a"}">${saved > 0 ? formatBytes(saved) + " (" + savedPct + "%)" : "+" + formatBytes(-saved)}</td></tr>
+          <tr><td>Time</td><td>${timeElapsed.toFixed(1)}s</td></tr>
+        </table>
+      </div>`;
+        logContainer.insertAdjacentHTML("beforeend", summaryHtml);
+        logContainer.scrollTop = logContainer.scrollHeight;
+      }
+
+      function clearLog() {
+        logContainer.innerHTML = "";
+        logStartTime = Date.now();
+        conversionStats = {
+          images: 0,
+          splits: 0,
+          splitParts: 0,
+          fixes: 0,
+          skipped: 0,
+          errors: 0,
+          originalSize: 0,
+          newSize: 0,
+        };
+      }
+
+      function showLog() {
+        logSection.style.display = "block";
+      }
+
+      // ── EPUB Utilities ────────────────────────────────────────────────────────────
+
+      const DEFENSIVE_STYLE =
+        '<style type="text/css">img,svg{max-width:100%;height:auto}body{overflow-wrap:break-word}table{max-width:100%;table-layout:fixed}pre,code{white-space:pre-wrap;word-wrap:break-word}*{box-sizing:border-box}</style>';
+
+      function xmlEscape(str) {
+        return str
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function escapeRegex(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }
+
+      function decodeHref(href) {
+        try {
+          return decodeURIComponent(href);
+        } catch (e) {
+          return href;
+        }
+      }
+
+      async function safeReadText(fileObj) {
+        const raw = await fileObj.async("uint8array");
+        let offset = 0;
+        if (
+          raw.length >= 3 &&
+          raw[0] === 0xef &&
+          raw[1] === 0xbb &&
+          raw[2] === 0xbf
+        )
+          offset = 3;
+        const utf8 = new TextDecoder("utf-8", { fatal: true });
+        try {
+          return utf8.decode(raw.subarray(offset));
+        } catch (e) {
+          /* not utf-8 */
+        }
+        const ascii = new TextDecoder("ascii", { fatal: false }).decode(
+          raw.subarray(offset, offset + 512),
+        );
+        const encodingMatch =
+          ascii.match(/encoding=["']([^"']+)["']/i) ||
+          ascii.match(/charset=["']?([^"'\s;]+)/i);
+        const encoding = encodingMatch
+          ? encodingMatch[1].toLowerCase()
+          : "windows-1252";
+        try {
+          return new TextDecoder(encoding, { fatal: false }).decode(
+            raw.subarray(offset),
+          );
+        } catch (e) {}
+        return new TextDecoder("iso-8859-1", { fatal: false }).decode(
+          raw.subarray(offset),
+        );
+      }
+
+      async function findOPFPath(zip) {
+        try {
+          const containerPath = Object.keys(zip.files).find(
+            (p) => p.toLowerCase() === "meta-inf/container.xml",
+          );
+          if (containerPath) {
+            const containerXml = await zip.files[containerPath].async("string");
+            const match = containerXml.match(
+              /<rootfile[^>]+full-path=["']([^"']+)["']/i,
+            );
+            if (match && zip.files[match[1]]) return match[1];
+          }
+        } catch (e) {
+          /* fall through */
+        }
+        let fallback = null;
+        zip.forEach((p) => {
+          if (!fallback && p.toLowerCase().endsWith(".opf")) fallback = p;
+        });
+        return fallback;
+      }
+
+      function resolvePath(basePath, href) {
+        if (href.startsWith("/")) return href.substring(1);
+        href = href.replace(/^\.\//, "");
+        const baseDir = basePath.includes("/")
+          ? basePath.substring(0, basePath.lastIndexOf("/"))
+          : "";
+        const baseParts = baseDir ? baseDir.split("/") : [];
+        const hrefParts = href.split("/");
+        while (hrefParts.length > 0 && hrefParts[0] === "..") {
+          hrefParts.shift();
+          if (baseParts.length > 0) baseParts.pop();
+        }
+        return [...baseParts, ...hrefParts].join("/").replace(/\/+/g, "/");
+      }
+
+      function safeSerialize(doc, originalContent) {
+        let result = new XMLSerializer().serializeToString(doc);
+        if (
+          originalContent &&
+          /^\s*<\?xml\b/.test(originalContent) &&
+          !/^\s*<\?xml\b/.test(result)
+        ) {
+          const declMatch = originalContent.match(/^\s*(<\?xml[^?]*\?>)/);
+          if (declMatch) result = declMatch[1] + "\n" + result;
+        }
+        result = result.replace(/ xmlns:ns\d+="[^"]*"/g, "");
+        result = result.replace(/ ns\d+:/g, " ");
+        return result;
+      }
+
+      function extractIdentifier(opfContent) {
+        let mainIdentifier = null;
+        try {
+          const doc = new DOMParser().parseFromString(
+            opfContent,
+            "application/xml",
+          );
+          if (!doc.querySelector("parsererror")) {
+            const pkg = doc.getElementsByTagNameNS("*", "package")[0];
+            const uid = pkg ? pkg.getAttribute("unique-identifier") : null;
+            if (uid) {
+              const el = [
+                ...doc.getElementsByTagNameNS("*", "identifier"),
+              ].find((e) => e.getAttribute("id") === uid);
+              if (el) mainIdentifier = (el.textContent || "").trim();
+            }
+            if (!mainIdentifier) {
+              const el = doc.getElementsByTagNameNS("*", "identifier")[0];
+              if (el) mainIdentifier = (el.textContent || "").trim();
+            }
+          }
+        } catch (e) {
+          /* regex fallback */
+        }
+        if (!mainIdentifier) {
+          const uniqueIdMatch = opfContent.match(
+            /<(?:\w+:)?package[^>]*unique-identifier=["']([^"']+)["']/i,
+          );
+          if (uniqueIdMatch) {
+            const idRegex = new RegExp(
+              `<dc:identifier[^>]*id=["']${uniqueIdMatch[1]}["'][^>]*>([^<]+)</dc:identifier>`,
+              "i",
+            );
+            const idMatch = opfContent.match(idRegex);
+            if (idMatch) mainIdentifier = idMatch[1].trim();
+          }
+          if (!mainIdentifier) {
+            const firstIdMatch = opfContent.match(
+              /<dc:identifier[^>]*>([^<]+)</i,
+            );
+            if (firstIdMatch) mainIdentifier = firstIdMatch[1].trim();
+          }
+        }
+        return mainIdentifier;
+      }
+
+      function syncNCXIdentifier(ncxText, mainIdentifier) {
+        if (!mainIdentifier) return ncxText;
+        let t = ncxText;
+        try {
+          const doc = new DOMParser().parseFromString(t, "application/xml");
+          if (!doc.querySelector("parsererror")) {
+            const meta = [...doc.getElementsByTagNameNS("*", "meta")].find(
+              (m) => m.getAttribute("name") === "dtb:uid",
+            );
+            if (meta) {
+              meta.setAttribute("content", mainIdentifier);
+              t = safeSerialize(doc, ncxText);
+            }
+          }
+        } catch (e) {
+          t = t.replace(
+            /<meta\s+name=["']dtb:uid["']\s+content=["'][^"']*["']\s*\/?>/gi,
+            `<meta name="dtb:uid" content="${xmlEscape(mainIdentifier)}"/>`,
+          );
+        }
+        return t;
+      }
+
+      function fixOPF(opfText, opfOriginal, opfDir, splitImages = {}) {
+        let t = opfText;
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(t, "application/xml");
+          if (doc.querySelector("parsererror"))
+            throw new Error("OPF parse failed");
+          const items = [...doc.getElementsByTagNameNS("*", "item")];
+          const manifestEl = doc.getElementsByTagNameNS("*", "manifest")[0];
+          for (const item of items) {
+            const href = item.getAttribute("href") || "";
+            const type = item.getAttribute("media-type") || "";
+            if (
+              href.endsWith(".jpg") &&
+              type.match(/^image\/(png|gif|webp|bmp)$/)
+            )
+              item.setAttribute("media-type", "image/jpeg");
+          }
+          for (const item of items) {
+            const props = item.getAttribute("properties") || "";
+            if (props.includes("svg")) {
+              const newProps = props
+                .split(/\s+/)
+                .filter((p) => p !== "svg")
+                .join(" ")
+                .trim();
+              if (newProps) item.setAttribute("properties", newProps);
+              else item.removeAttribute("properties");
+            }
+          }
+          for (const [splitKey, splitInfo] of Object.entries(splitImages)) {
+            const parts = splitInfo.parts || splitInfo;
+            let origHref =
+              opfDir && splitKey.startsWith(opfDir + "/")
+                ? splitKey.substring(opfDir.length + 1)
+                : splitKey;
+            const origHrefJpg = origHref.replace(
+              /\.(png|gif|webp|bmp|jpeg)$/i,
+              ".jpg",
+            );
+            const part1Href = origHrefJpg.replace(/\.jpg$/i, "_part1.jpg");
+            for (const item of items) {
+              const h = item.getAttribute("href") || "";
+              if (
+                h === origHref ||
+                h === origHrefJpg ||
+                decodeHref(h) === origHref ||
+                decodeHref(h) === origHrefJpg
+              ) {
+                item.setAttribute("href", part1Href);
+                break;
+              }
+            }
+            if (manifestEl) {
+              const ns =
+                manifestEl.namespaceURI || "http://www.idpf.org/2007/opf";
+              for (let j = 1; j < parts.length; j++) {
+                const p = parts[j];
+                const href =
+                  opfDir && p.path.startsWith(opfDir + "/")
+                    ? p.path.substring(opfDir.length + 1)
+                    : p.path;
+                const newItem = doc.createElementNS(ns, "item");
+                newItem.setAttribute("id", `img-${p.id}`);
+                newItem.setAttribute("href", href);
+                newItem.setAttribute("media-type", "image/jpeg");
+                manifestEl.appendChild(newItem);
+              }
+            }
+          }
+          t = safeSerialize(doc, opfOriginal);
+        } catch (e) {
+          t = t.replace(
+            /(<(?:\w+:)?item\b[^>]*href="[^"]+\.jpg"[^>]*)media-type="image\/(png|gif|webp|bmp)"/g,
+            '$1media-type="image/jpeg"',
+          );
+          t = t.replace(
+            /(<(?:\w+:)?item\b[^>]*)media-type="image\/(png|gif|webp|bmp)"([^>]*href="[^"]+\.jpg")/g,
+            '$1media-type="image/jpeg"$3',
+          );
+          t = t.replace(/\s+svg(?=["'\s>])/g, "");
+          for (const [splitKey, splitInfo] of Object.entries(splitImages)) {
+            const parts = splitInfo.parts || splitInfo;
+            let origHref =
+              opfDir && splitKey.startsWith(opfDir + "/")
+                ? splitKey.substring(opfDir.length + 1)
+                : splitKey;
+            const origHrefJpg = origHref.replace(
+              /\.(png|gif|webp|bmp|jpeg)$/i,
+              ".jpg",
+            );
+            const part1Href = origHrefJpg.replace(/\.jpg$/i, "_part1.jpg");
+            const origImgRegex = new RegExp(
+              `(href=["'])(${escapeRegex(origHref)}|${escapeRegex(origHrefJpg)})(["'])`,
+              "gi",
+            );
+            t = t.replace(origImgRegex, `$1${part1Href}$3`);
+            let adds = "";
+            for (let j = 1; j < parts.length; j++) {
+              const p = parts[j];
+              const href =
+                opfDir && p.path.startsWith(opfDir + "/")
+                  ? p.path.substring(opfDir.length + 1)
+                  : p.path;
+              adds += `<item id="img-${xmlEscape(p.id)}" href="${xmlEscape(href)}" media-type="image/jpeg"/>\n`;
+            }
+            if (adds && t.includes("</manifest>"))
+              t = t.replace("</manifest>", adds + "</manifest>");
+          }
+        }
+        const cm = ensureCoverMeta(t);
+        if (cm.fixed) t = cm.o;
+        return t;
+      }
+
+      function fixSvgCover(content) {
+        const hasSvg = content.includes("<svg") || content.includes("<svg:");
+        if (!hasSvg || !content.includes("xlink:href"))
+          return { c: content, fixed: false };
+        if (
+          !content.includes("calibre:cover") &&
+          !content.includes('name="cover"') &&
+          !content.includes("<title>Cover</title>")
+        )
+          return { c: content, fixed: false };
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(content, "application/xhtml+xml");
+          if (doc.querySelector("parsererror")) {
+            const m = content.match(/xlink:href=["']([^"']+)["']/);
+            if (!m) return { c: content, fixed: false };
+            return { c: buildCoverXhtml(m[1]), fixed: true };
+          }
+          const svgNS = "http://www.w3.org/2000/svg",
+            xlinkNS = "http://www.w3.org/1999/xlink";
+          let imgHref = null;
+          const svgs = [
+            ...doc.getElementsByTagName("svg"),
+            ...doc.getElementsByTagNameNS(svgNS, "svg"),
+            ...doc.getElementsByTagName("svg:svg"),
+          ];
+          for (const svg of svgs) {
+            const imageEl =
+              svg.getElementsByTagName("image")[0] ||
+              svg.getElementsByTagNameNS(svgNS, "image")[0] ||
+              svg.getElementsByTagName("svg:image")[0];
+            if (imageEl) {
+              imgHref =
+                imageEl.getAttributeNS(xlinkNS, "href") ||
+                imageEl.getAttribute("xlink:href") ||
+                imageEl.getAttribute("href");
+              if (imgHref) break;
+            }
+          }
+          if (!imgHref) {
+            const m = content.match(/xlink:href=["']([^"']+)["']/);
+            if (!m) return { c: content, fixed: false };
+            imgHref = m[1];
+          }
+          return { c: buildCoverXhtml(imgHref), fixed: true };
+        } catch (e) {
+          const m = content.match(/xlink:href=["']([^"']+)["']/);
+          if (!m) return { c: content, fixed: false };
+          return { c: buildCoverXhtml(m[1]), fixed: true };
+        }
+      }
+
+      function buildCoverXhtml(src) {
+        return `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
+<head><meta content="text/html; charset=UTF-8" http-equiv="default-style"/><title>Cover</title></head>
+<body><section epub:type="cover"><img style="max-width:100%;height:auto" alt="Cover" src="${src}"/></section></body>
+</html>`;
+      }
+
+      function fixSvgWrappedImages(content) {
+        const hasSvg = content.includes("<svg") || content.includes("<svg:");
+        if (!hasSvg || !content.includes("xlink:href"))
+          return { c: content, fixed: false, count: 0 };
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(content, "application/xhtml+xml");
+          if (doc.querySelector("parsererror")) {
+            let fixedCount = 0;
+            const result = content.replace(
+              /<(?:svg:)?svg\b[^>]*>[\s\S]*?<(?:svg:)?image\b[^>]*xlink:href=["']([^"']+)["'][^>]*\/?>\s*<\/(?:svg:)?svg>/gi,
+              (_, href) => {
+                fixedCount++;
+                return `<img style="max-width:100%;height:auto" src="${href}" alt=""/>`;
+              },
+            );
+            return { c: result, fixed: fixedCount > 0, count: fixedCount };
+          }
+          const svgNS = "http://www.w3.org/2000/svg",
+            xlinkNS = "http://www.w3.org/1999/xlink";
+          const svgElements = [
+            ...doc.querySelectorAll("svg"),
+            ...doc.getElementsByTagNameNS(svgNS, "svg"),
+          ];
+          const uniqueSvgs = [...new Set(svgElements)];
+          let fixedCount = 0;
+          for (const svg of uniqueSvgs) {
+            const imageEl =
+              svg.querySelector("image[*|href]") ||
+              svg.getElementsByTagNameNS(svgNS, "image")[0] ||
+              svg.getElementsByTagNameNS("*", "image")[0];
+            if (!imageEl) continue;
+            const href =
+              imageEl.getAttributeNS(xlinkNS, "href") ||
+              imageEl.getAttribute("xlink:href") ||
+              imageEl.getAttribute("href");
+            if (!href) continue;
+            const width =
+              imageEl.getAttribute("width") || svg.getAttribute("width");
+            const height =
+              imageEl.getAttribute("height") || svg.getAttribute("height");
+            const img = doc.createElementNS(
+              "http://www.w3.org/1999/xhtml",
+              "img",
+            );
+            img.setAttribute("src", href);
+            img.setAttribute("alt", "");
+            img.setAttribute("style", "max-width:100%;height:auto");
+            if (width) img.setAttribute("width", width);
+            if (height) img.setAttribute("height", height);
+            svg.parentNode.replaceChild(img, svg);
+            fixedCount++;
+          }
+          if (fixedCount === 0) return { c: content, fixed: false, count: 0 };
+          return {
+            c: safeSerialize(doc, content),
+            fixed: true,
+            count: fixedCount,
+          };
+        } catch (e) {
+          let fixedCount = 0;
+          const result = content.replace(
+            /<(?:svg:)?svg\b[^>]*>[\s\S]*?<(?:svg:)?image\b[^>]*xlink:href=["']([^"']+)["'][^>]*\/?>\s*<\/(?:svg:)?svg>/gi,
+            (_, href) => {
+              fixedCount++;
+              return `<img style="max-width:100%;height:auto" src="${href}" alt=""/>`;
+            },
+          );
+          return { c: result, fixed: fixedCount > 0, count: fixedCount };
+        }
+      }
+
+      function ensureCoverMeta(opfString) {
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(opfString, "application/xml");
+          if (doc.querySelector("parsererror")) throw new Error("Parse failed");
+          let coverId = null;
+          const items = [...doc.getElementsByTagNameNS("*", "item")];
+          for (const item of items) {
+            const props = item.getAttribute("properties") || "";
+            const type = item.getAttribute("media-type") || "";
+            if (!type.startsWith("image/")) continue;
+            if (props.includes("cover-image")) {
+              coverId = item.getAttribute("id");
+              break;
+            }
+          }
+          if (!coverId) {
+            for (const item of items) {
+              const id = item.getAttribute("id") || "",
+                href = item.getAttribute("href") || "",
+                type = item.getAttribute("media-type") || "";
+              if (!type.startsWith("image/")) continue;
+              if (
+                id.toLowerCase().includes("cover") ||
+                href.toLowerCase().includes("cover")
+              ) {
+                coverId = id;
+                break;
+              }
+            }
+          }
+          if (!coverId) return { o: opfString, fixed: false };
+          const metas = [...doc.getElementsByTagNameNS("*", "meta")];
+          const coverMeta = metas.find(
+            (m) => m.getAttribute("name") === "cover",
+          );
+          if (coverMeta) {
+            if (coverMeta.getAttribute("content") === coverId)
+              return { o: opfString, fixed: false };
+            coverMeta.setAttribute("content", coverId);
+          } else {
+            const metadata = doc.getElementsByTagNameNS("*", "metadata")[0];
+            if (!metadata) return { o: opfString, fixed: false };
+            const ns = metadata.namespaceURI || "http://www.idpf.org/2007/opf";
+            const newMeta = doc.createElementNS(ns, "meta");
+            newMeta.setAttribute("name", "cover");
+            newMeta.setAttribute("content", coverId);
+            metadata.appendChild(newMeta);
+          }
+          return { o: safeSerialize(doc, opfString), fixed: true };
+        } catch (e) {
+          return ensureCoverMetaRegex(opfString);
+        }
+      }
+
+      function ensureCoverMetaRegex(o) {
+        let coverId = null,
+          m;
+        if (
+          !coverId &&
+          (m = o.match(
+            /<\w+:?item[^>]+id="([^"]+)"[^>]+properties="[^"]*cover-image[^"]*"/i,
+          ))
+        )
+          coverId = m[1];
+        if (
+          !coverId &&
+          (m = o.match(
+            /<\w+:?item[^>]+properties="[^"]*cover-image[^"]*"[^>]+id="([^"]+)"/i,
+          ))
+        )
+          coverId = m[1];
+        if (
+          !coverId &&
+          (m = o.match(
+            /<\w+:?item[^>]*id="([^"]+)"[^>]*href="[^"]*cover[^"]*"[^>]*media-type="image\//i,
+          ))
+        )
+          coverId = m[1];
+        if (
+          !coverId &&
+          (m = o.match(
+            /<\w+:?item[^>]*href="[^"]*cover[^"]*"[^>]*id="([^"]+)"[^>]*media-type="image\//i,
+          ))
+        )
+          coverId = m[1];
+        if (
+          !coverId &&
+          (m = o.match(
+            /<\w+:?item[^>]*id="([^"]*cover[^"]*)"[^>]*media-type="image\//i,
+          ))
+        )
+          coverId = m[1];
+        if (
+          !coverId &&
+          (m = o.match(
+            /<\w+:?item[^>]*media-type="image\/[^"]*"[^>]*id="([^"]*cover[^"]*)"/i,
+          ))
+        )
+          coverId = m[1];
+        if (!coverId) return { o, fixed: false };
+        const metaMatch =
+          o.match(
+            /<\w+:?meta\s+name=["']cover["']\s+content=["']([^"']+)["']/i,
+          ) ||
+          o.match(
+            /<\w+:?meta\s+content=["']([^"']+)["']\s+name=["']cover["']/i,
+          );
+        if (metaMatch) {
+          if (metaMatch[1] === coverId) return { o, fixed: false };
+          const esc = xmlEscape(coverId);
+          o = o.replace(
+            /<\w+:?meta\s+name=["']cover["']\s+content=["'][^"']+["']\s*\/?>/gi,
+            `<meta name="cover" content="${esc}" />`,
+          );
+          o = o.replace(
+            /<\w+:?meta\s+content=["'][^"']+["']\s+name=["']cover["']\s*\/?>/gi,
+            `<meta name="cover" content="${esc}" />`,
+          );
+          return { o, fixed: true };
+        }
+        const idx = o.indexOf("</metadata>");
+        if (idx !== -1)
+          return {
+            o:
+              o.substring(0, idx) +
+              `    <meta name="cover" content="${xmlEscape(coverId)}"/>\n  </metadata>` +
+              o.substring(idx + 11),
+            fixed: true,
+          };
+        return { o, fixed: false };
+      }
+
+      // ── Image Processing ─────────────────────────────────────────────────────────
+
+      function applyGrayscale(ctx, width, height) {
+        if (!ENABLE_GRAYSCALE) return;
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const a = data[i + 3] / 255;
+          const r = data[i] * a + 255 * (1 - a);
+          const g = data[i + 1] * a + 255 * (1 - a);
+          const b = data[i + 2] * a + 255 * (1 - a);
+          const gray = Math.round(r * 0.299 + g * 0.587 + b * 0.114);
+          data[i] = gray;
+          data[i + 1] = gray;
+          data[i + 2] = gray;
+          data[i + 3] = 255;
+        }
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      const IMAGE_LOAD_TIMEOUT_MS = 30000;
+
+      async function processImage(data, imageState = 0, imagePath = "") {
+        return new Promise((resolve, reject) => {
+          const url = URL.createObjectURL(new Blob([data]));
+          const img = new Image();
+          const origSize = data.byteLength;
+          const timeoutId = setTimeout(() => {
+            URL.revokeObjectURL(url);
+            reject(new Error("Image load timeout"));
+          }, IMAGE_LOAD_TIMEOUT_MS);
+
+          img.onload = async () => {
+            clearTimeout(timeoutId);
+            URL.revokeObjectURL(url);
+            const origW = img.width,
+              origH = img.height;
+
+            if (imageState === 1) {
+              // H-Split: scale width to MAX_HEIGHT, rotate, split if needed
+              const scale = MAX_HEIGHT / origW;
+              const scaledW = MAX_HEIGHT,
+                scaledH = Math.round(origH * scale);
+              const scaledCanvas = document.createElement("canvas");
+              scaledCanvas.width = scaledW;
+              scaledCanvas.height = scaledH;
+              const scaledCtx = scaledCanvas.getContext("2d");
+              scaledCtx.imageSmoothingQuality = "high";
+              scaledCtx.fillStyle = "#FFF";
+              scaledCtx.fillRect(0, 0, scaledW, scaledH);
+              scaledCtx.drawImage(
+                img,
+                0,
+                0,
+                origW,
+                origH,
+                0,
+                0,
+                scaledW,
+                scaledH,
+              );
+              const rotW = scaledH,
+                rotH = scaledW;
+              const rotCanvas = document.createElement("canvas");
+              rotCanvas.width = rotW;
+              rotCanvas.height = rotH;
+              const rotCtx = rotCanvas.getContext("2d");
+              rotCtx.fillStyle = "#FFF";
+              rotCtx.fillRect(0, 0, rotW, rotH);
+              const isClockwise = HANDEDNESS === "right";
+              if (isClockwise) {
+                rotCtx.translate(rotW, 0);
+                rotCtx.rotate(Math.PI / 2);
+              } else {
+                rotCtx.translate(0, rotH);
+                rotCtx.rotate(-Math.PI / 2);
+              }
+              rotCtx.drawImage(scaledCanvas, 0, 0);
+              rotCtx.setTransform(1, 0, 0, 1, 0, 0);
+              applyGrayscale(rotCtx, rotW, rotH);
+              if (rotW <= MAX_WIDTH) {
+                const blob = await new Promise((res) =>
+                  rotCanvas.toBlob(res, "image/jpeg", JPEG_QUALITY / 100),
+                );
+                const arrBuf = await blob.arrayBuffer();
+                resolve({
+                  parts: [
+                    {
+                      data: arrBuf,
+                      suffix: "",
+                      width: rotW,
+                      height: rotH,
+                      size: arrBuf.byteLength,
+                    },
+                  ],
+                  meta: {
+                    origW,
+                    origH,
+                    origSize,
+                    wasSplit: false,
+                    rotated: true,
+                    finalW: rotW,
+                    finalH: rotH,
+                    finalSize: arrBuf.byteLength,
+                    imageState: 1,
+                  },
+                });
+              } else {
+                resolve(
+                  await splitCanvas(
+                    rotCanvas,
+                    rotW,
+                    rotH,
+                    origW,
+                    origH,
+                    origSize,
+                    isClockwise,
+                    true,
+                    1,
+                  ),
+                );
+              }
+            } else if (imageState === 2) {
+              // V-Split: scale height to MAX_HEIGHT, split if needed
+              const scale = MAX_HEIGHT / origH;
+              const scaledW = Math.round(origW * scale),
+                scaledH = MAX_HEIGHT;
+              const scaledCanvas = document.createElement("canvas");
+              scaledCanvas.width = scaledW;
+              scaledCanvas.height = scaledH;
+              const scaledCtx = scaledCanvas.getContext("2d");
+              scaledCtx.imageSmoothingQuality = "high";
+              scaledCtx.fillStyle = "#FFF";
+              scaledCtx.fillRect(0, 0, scaledW, scaledH);
+              scaledCtx.drawImage(
+                img,
+                0,
+                0,
+                origW,
+                origH,
+                0,
+                0,
+                scaledW,
+                scaledH,
+              );
+              applyGrayscale(scaledCtx, scaledW, scaledH);
+              if (scaledW <= MAX_WIDTH) {
+                const blob = await new Promise((res) =>
+                  scaledCanvas.toBlob(res, "image/jpeg", JPEG_QUALITY / 100),
+                );
+                const arrBuf = await blob.arrayBuffer();
+                resolve({
+                  parts: [
+                    {
+                      data: arrBuf,
+                      suffix: "",
+                      width: scaledW,
+                      height: scaledH,
+                      size: arrBuf.byteLength,
+                    },
+                  ],
+                  meta: {
+                    origW,
+                    origH,
+                    origSize,
+                    wasSplit: false,
+                    rotated: false,
+                    finalW: scaledW,
+                    finalH: scaledH,
+                    finalSize: arrBuf.byteLength,
+                    imageState: 2,
+                  },
+                });
+              } else {
+                resolve(
+                  await splitCanvas(
+                    scaledCanvas,
+                    scaledW,
+                    scaledH,
+                    origW,
+                    origH,
+                    origSize,
+                    false,
+                    false,
+                    2,
+                  ),
+                );
+              }
+            } else if (imageState === 3) {
+              // Rotate & Fit
+              const rotW = origH,
+                rotH = origW;
+              const rotCanvas = document.createElement("canvas");
+              rotCanvas.width = rotW;
+              rotCanvas.height = rotH;
+              const rotCtx = rotCanvas.getContext("2d");
+              rotCtx.fillStyle = "#FFF";
+              rotCtx.fillRect(0, 0, rotW, rotH);
+              const isClockwise = HANDEDNESS === "right";
+              if (isClockwise) {
+                rotCtx.translate(rotW, 0);
+                rotCtx.rotate(Math.PI / 2);
+              } else {
+                rotCtx.translate(0, rotH);
+                rotCtx.rotate(-Math.PI / 2);
+              }
+              rotCtx.drawImage(img, 0, 0);
+              rotCtx.setTransform(1, 0, 0, 1, 0, 0);
+              const fitsInScreen = rotW <= MAX_WIDTH && rotH <= MAX_HEIGHT;
+              const drawCanvas = fitsInScreen
+                ? rotCanvas
+                : (() => {
+                    const scale = Math.min(MAX_WIDTH / rotW, MAX_HEIGHT / rotH);
+                    const newW = Math.round(rotW * scale),
+                      newH = Math.round(rotH * scale);
+                    const sc = document.createElement("canvas");
+                    sc.width = newW;
+                    sc.height = newH;
+                    const sctx = sc.getContext("2d");
+                    sctx.imageSmoothingQuality = "high";
+                    sctx.fillStyle = "#FFF";
+                    sctx.fillRect(0, 0, newW, newH);
+                    sctx.drawImage(rotCanvas, 0, 0, newW, newH);
+                    return sc;
+                  })();
+              applyGrayscale(
+                drawCanvas.getContext("2d"),
+                drawCanvas.width,
+                drawCanvas.height,
+              );
+              const blob = await new Promise((res) =>
+                drawCanvas.toBlob(res, "image/jpeg", JPEG_QUALITY / 100),
+              );
+              const arrBuf = await blob.arrayBuffer();
+              resolve({
+                parts: [
+                  {
+                    data: arrBuf,
+                    suffix: "",
+                    width: drawCanvas.width,
+                    height: drawCanvas.height,
+                    size: arrBuf.byteLength,
+                  },
+                ],
+                meta: {
+                  origW,
+                  origH,
+                  origSize,
+                  wasSplit: false,
+                  rotated: true,
+                  finalW: drawCanvas.width,
+                  finalH: drawCanvas.height,
+                  finalSize: arrBuf.byteLength,
+                  imageState: 3,
+                },
+              });
+            } else {
+              // State 0: Normal - scale to fit
+              const fitsInScreen = origW <= MAX_WIDTH && origH <= MAX_HEIGHT;
+              const scale = fitsInScreen
+                ? 1
+                : Math.min(MAX_WIDTH / origW, MAX_HEIGHT / origH);
+              const newW = Math.round(origW * scale),
+                newH = Math.round(origH * scale);
+              const c = document.createElement("canvas");
+              c.width = newW;
+              c.height = newH;
+              const ctx = c.getContext("2d");
+              ctx.imageSmoothingQuality = "high";
+              ctx.fillStyle = "#FFF";
+              ctx.fillRect(0, 0, newW, newH);
+              ctx.drawImage(img, 0, 0, newW, newH);
+              applyGrayscale(ctx, newW, newH);
+              const blob = await new Promise((res) =>
+                c.toBlob(res, "image/jpeg", JPEG_QUALITY / 100),
+              );
+              const arrBuf = await blob.arrayBuffer();
+              resolve({
+                parts: [
+                  {
+                    data: arrBuf,
+                    suffix: "",
+                    width: newW,
+                    height: newH,
+                    size: arrBuf.byteLength,
+                  },
+                ],
+                meta: {
+                  origW,
+                  origH,
+                  origSize,
+                  wasSplit: false,
+                  rotated: false,
+                  finalW: newW,
+                  finalH: newH,
+                  finalSize: arrBuf.byteLength,
+                  imageState: 0,
+                },
+              });
+            }
+          };
+          img.onerror = () => {
+            clearTimeout(timeoutId);
+            URL.revokeObjectURL(url);
+            reject(new Error("Image load failed"));
+          };
+          img.src = url;
+        });
+      }
+
+      async function splitCanvas(
+        canvas,
+        cW,
+        cH,
+        origW,
+        origH,
+        origSize,
+        isClockwise,
+        rotated,
+        imageState,
+      ) {
+        const maxW = MAX_WIDTH;
+        const minOverlapPx = Math.round(maxW * (OVERLAP_PERCENT / 100));
+        const maxStep = maxW - minOverlapPx;
+        let numParts = Math.ceil((cW - minOverlapPx) / maxStep);
+        if (numParts < 2) numParts = 2;
+        let step = Math.round((cW - maxW) / (numParts - 1));
+        let overlapPx = maxW - step;
+        if (overlapPx < minOverlapPx) {
+          overlapPx = minOverlapPx;
+          step = maxW - overlapPx;
+        }
+        const positions = [];
+        for (let i = 0; i < numParts; i++) {
+          let x = isClockwise ? cW - maxW - i * step : i * step;
+          x = Math.max(0, Math.min(x, cW - maxW));
+          positions.push(x);
+        }
+        if (isClockwise) {
+          positions[0] = cW - maxW;
+          positions[numParts - 1] = 0;
+        } else {
+          positions[0] = 0;
+          positions[numParts - 1] = cW - maxW;
+        }
+        const parts = [];
+        for (let i = 0; i < numParts; i++) {
+          const x = positions[i];
+          const partCanvas = document.createElement("canvas");
+          partCanvas.width = maxW;
+          partCanvas.height = cH;
+          const partCtx = partCanvas.getContext("2d");
+          partCtx.fillStyle = "#FFFFFF";
+          partCtx.fillRect(0, 0, maxW, cH);
+          partCtx.drawImage(canvas, x, 0, maxW, cH, 0, 0, maxW, cH);
+          const blob = await new Promise((res) =>
+            partCanvas.toBlob(res, "image/jpeg", JPEG_QUALITY / 100),
+          );
+          const arrBuf = await blob.arrayBuffer();
+          parts.push({
+            data: arrBuf,
+            suffix: `_part${i + 1}`,
+            width: maxW,
+            height: cH,
+            size: arrBuf.byteLength,
+          });
+        }
+        const totalSize = parts.reduce((sum, p) => sum + p.size, 0);
+        return {
+          parts,
+          meta: {
+            origW,
+            origH,
+            origSize,
+            wasSplit: true,
+            splitCount: numParts,
+            rotated,
+            finalW: parts[0].width,
+            finalH: parts[0].height,
+            finalSize: totalSize,
+            imageState,
+          },
+        };
+      }
+
+      // ── Main Conversion ──────────────────────────────────────────────────────────
+
+      async function convertEpubFile(file, progressCallback) {
+        const startTime = Date.now();
+        const originalSize = file.size;
+        let totalImageSize = 0,
+          totalNewSize = 0;
+
+        clearLog();
+        showLog();
+        log(
+          `<strong>${escapeHtml(file.name)}</strong> <span class="log-detail">(${formatBytes(originalSize)})</span>`,
+          "",
+          "INFO",
+        );
+        log(
+          `Quality: ${JPEG_QUALITY}% | Split: ${["None", "H-Split", "V-Split"][SPLIT_MODE] || "None"} | Overlap: ${OVERLAP_PERCENT}% | Rotation: ${HANDEDNESS === "right" ? "CW" : "CCW"} | Grayscale: ${ENABLE_GRAYSCALE ? "ON" : "OFF"}`,
+          "",
+          "INFO",
+        );
+
+        const zip = await JSZip.loadAsync(file);
+        const renamed = {};
+        zip.forEach((p) => {
+          if (p.toLowerCase().match(/\.(png|gif|webp|bmp|jpeg)$/))
+            renamed[p] = p.replace(/\.(png|gif|webp|bmp|jpeg)$/i, ".jpg");
+        });
+
+        const out = new JSZip();
+        const entries = Object.entries(zip.files);
+        const splitImages = {};
+        const xhtmlFiles = {};
+        let opfPath = null,
+          opfContent = null,
+          mainIdentifier = null;
+
+        if (zip.files["mimetype"]) {
+          const mimetypeData = await zip.files["mimetype"].async("arraybuffer");
+          out.file("mimetype", mimetypeData, {
+            compression: "STORE",
+            createFolders: false,
+          });
+        }
+
+        // First pass: images
+        for (let i = 0; i < entries.length; i++) {
+          if (operationCancelled) throw new Error("Cancelled");
+          const [path, fileObj] = entries[i];
+          if (fileObj.dir || path === "mimetype") continue;
+          const low = path.toLowerCase();
+
+          if (low.match(/\.(png|gif|webp|bmp|jpg|jpeg)$/)) {
+            const data = await fileObj.async("arraybuffer");
+            const imageState = imageStates[path] ?? SPLIT_MODE;
+            let result;
+            try {
+              result = await processImage(data, imageState, path);
+            } catch (imageError) {
+              console.error(`Failed to process ${path}:`, imageError);
+              log(
+                `Warning: failed to process ${escapeHtml(path.split("/").pop())}, using original`,
+                "warning",
+                "IMG-ERR",
+              );
+              result = {
+                parts: [
+                  {
+                    data,
+                    suffix: "",
+                    width: 0,
+                    height: 0,
+                    size: data.byteLength,
+                  },
+                ],
+                meta: {
+                  origW: 0,
+                  origH: 0,
+                  origSize: data.byteLength,
+                  wasSplit: false,
+                  rotated: false,
+                  finalW: 0,
+                  finalH: 0,
+                  finalSize: data.byteLength,
+                  imageState,
+                },
+              };
+            }
+            const { parts, meta } = result;
+            const baseName = path.replace(/\.[^.]+$/, "");
+            const imgName = path.split("/").pop(),
+              origFormat = path.split(".").pop();
+            logImage(
+              imgName,
+              meta.origW,
+              meta.origH,
+              origFormat,
+              meta.origSize,
+              meta.finalW,
+              meta.finalH,
+              meta.finalSize,
+              meta.wasSplit,
+              meta.splitCount || 0,
+              parts,
+              meta.imageState || 0,
+            );
+            totalImageSize += meta.origSize;
+            totalNewSize += meta.finalSize;
+
+            if (parts.length === 1 && parts[0].suffix === "") {
+              const newPath = renamed[path] || path.replace(/\.[^.]+$/, ".jpg");
+              out.file(newPath, parts[0].data, {
+                compression: "STORE",
+                createFolders: false,
+              });
+            } else {
+              const origName = path.split("/").pop();
+              const origDir = path.includes("/")
+                ? path.substring(0, path.lastIndexOf("/"))
+                : "";
+              splitImages[path] = { origName, origDir, parts: [] };
+              for (const part of parts) {
+                const partName =
+                  baseName.split("/").pop() + part.suffix + ".jpg";
+                const partPath =
+                  (path.includes("/")
+                    ? path.substring(0, path.lastIndexOf("/") + 1)
+                    : "") + partName;
+                out.file(partPath, part.data, {
+                  compression: "STORE",
+                  createFolders: false,
+                });
+                splitImages[path].parts.push({
+                  path: partPath,
+                  imgName: partName,
+                  id: baseName.split("/").pop() + part.suffix,
+                  suffix: part.suffix,
+                });
+              }
+            }
+          } else if (low.match(/\.(xhtml|html|htm)$/)) {
+            xhtmlFiles[path] = await safeReadText(fileObj);
+          } else if (low.endsWith(".opf")) {
+            opfPath = path;
+            opfContent = await safeReadText(fileObj);
+          }
+          if (progressCallback) progressCallback((i / entries.length) * 60);
+        }
+
+        // Second pass: XHTML
+        for (const [xhtmlPath, content] of Object.entries(xhtmlFiles)) {
+          if (operationCancelled) throw new Error("Cancelled");
+          let t = content;
+          const r = fixSvgCover(t);
+          if (r.fixed) {
+            t = r.c;
+            logFix("SVG cover", xhtmlPath.split("/").pop());
+          }
+          const r2 = fixSvgWrappedImages(t);
+          if (r2.fixed) {
+            t = r2.c;
+            logFix(`SVG images (${r2.count})`, xhtmlPath.split("/").pop());
+          }
+          for (const [o, n] of Object.entries(renamed))
+            t = t.split(o.split("/").pop()).join(n.split("/").pop());
+          try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(t, "application/xhtml+xml");
+            if (!doc.querySelector("parsererror")) {
+              let modified = false;
+              for (const img of doc.querySelectorAll("img")) {
+                if (img.hasAttribute("width")) {
+                  img.removeAttribute("width");
+                  modified = true;
+                }
+                if (img.hasAttribute("height")) {
+                  img.removeAttribute("height");
+                  modified = true;
+                }
+              }
+              if (Object.keys(splitImages).length > 0) {
+                const xhtmlDir = xhtmlPath.includes("/")
+                  ? xhtmlPath.substring(0, xhtmlPath.lastIndexOf("/"))
+                  : "";
+                const rootFolders = ["ops", "oebps", "epub", "content"];
+                for (const [fullPath, splitInfo] of Object.entries(
+                  splitImages,
+                )) {
+                  const { origName, origDir, parts } = splitInfo;
+                  const newName = origName.replace(
+                    /\.(png|gif|webp|bmp|jpeg)$/i,
+                    ".jpg",
+                  );
+                  const splitDirParts = origDir.split("/").filter((p) => p);
+                  const lastDir =
+                    splitDirParts.length > 0
+                      ? splitDirParts[splitDirParts.length - 1].toLowerCase()
+                      : null;
+                  const immediateParent =
+                    lastDir && !rootFolders.includes(lastDir)
+                      ? splitDirParts[splitDirParts.length - 1]
+                      : null;
+                  const xhtmlDirParts = xhtmlDir.split("/").filter((p) => p);
+                  const matchingImgs = [];
+                  for (const img of doc.querySelectorAll("img")) {
+                    const src = img.getAttribute("src") || "";
+                    const srcParts = src
+                      .split("/")
+                      .filter((p) => p && p !== ".." && p !== ".");
+                    const srcName = srcParts.pop() || "";
+                    if (srcName !== origName && srcName !== newName) continue;
+                    if (immediateParent) {
+                      if (srcParts.length === 0) {
+                        if (
+                          xhtmlDirParts[xhtmlDirParts.length - 1] !==
+                          immediateParent
+                        )
+                          continue;
+                      } else {
+                        if (srcParts[srcParts.length - 1] !== immediateParent)
+                          continue;
+                      }
+                    } else {
+                      if (srcParts.length > 0) {
+                        if (
+                          !rootFolders.includes(
+                            srcParts[srcParts.length - 1].toLowerCase(),
+                          )
+                        )
+                          continue;
+                      }
+                    }
+                    matchingImgs.push(img);
+                  }
+                  for (const img of matchingImgs) {
+                    const src = img.getAttribute("src") || "";
+                    img.setAttribute(
+                      "src",
+                      src
+                        .replace(origName, parts[0].imgName)
+                        .replace(newName, parts[0].imgName),
+                    );
+                    if (parts.length > 1) {
+                      img.removeAttribute("width");
+                      img.removeAttribute("height");
+                      img.removeAttribute("class");
+                      img.setAttribute("style", "max-width:100%;height:auto");
+                      let container = img.parentElement;
+                      const safeContainers = [
+                        "div",
+                        "p",
+                        "figure",
+                        "aside",
+                        "section",
+                        "body",
+                      ];
+                      while (
+                        container &&
+                        !safeContainers.includes(
+                          container.tagName.toLowerCase(),
+                        )
+                      )
+                        container = container.parentElement;
+                      const insertTarget = container || img.parentElement;
+                      if (
+                        insertTarget &&
+                        insertTarget.tagName.toLowerCase() !== "body"
+                      ) {
+                        insertTarget.removeAttribute("class");
+                        insertTarget.removeAttribute("style");
+                      }
+                      const insertParent = insertTarget.parentElement,
+                        insertRef = insertTarget.nextSibling;
+                      const ns =
+                        doc.documentElement.namespaceURI ||
+                        "http://www.w3.org/1999/xhtml";
+                      for (let pi = 1; pi < parts.length; pi++) {
+                        const wrapper = doc.createElementNS(ns, "div");
+                        const newImg = doc.createElementNS(ns, "img");
+                        const partSrc = src
+                          .replace(origName, parts[pi].imgName)
+                          .replace(newName, parts[pi].imgName);
+                        newImg.setAttribute("src", partSrc);
+                        newImg.setAttribute("alt", "");
+                        newImg.setAttribute(
+                          "style",
+                          "max-width:100%;height:auto",
+                        );
+                        wrapper.appendChild(newImg);
+                        if (insertRef)
+                          insertParent.insertBefore(wrapper, insertRef);
+                        else insertParent.appendChild(wrapper);
+                      }
+                    }
+                    modified = true;
+                  }
+                }
+              }
+              if (modified) t = safeSerialize(doc, content);
+            }
+          } catch (e) {
+            console.warn("DOMParser error for", xhtmlPath, e.message);
+          }
+          if (t.includes("</head>"))
+            t = t.replace("</head>", DEFENSIVE_STYLE + "</head>");
+          out.file(xhtmlPath, t, {
+            compression: "DEFLATE",
+            compressionOptions: { level: 8 },
+            createFolders: false,
+          });
+        }
+
+        // OPF identifier
+        if (opfContent) mainIdentifier = extractIdentifier(opfContent);
+
+        // Third pass: OPF
+        if (opfContent) {
+          let t = opfContent;
+          for (const [o, n] of Object.entries(renamed))
+            t = t.split(o.split("/").pop()).join(n.split("/").pop());
+          const opfDir = opfPath.includes("/")
+            ? opfPath.substring(0, opfPath.lastIndexOf("/"))
+            : "";
+          t = fixOPF(t, opfContent, opfDir, splitImages);
+          if (t !== opfContent) logFix("OPF", "manifest updated");
+          out.file(opfPath, t, {
+            compression: "DEFLATE",
+            compressionOptions: { level: 8 },
+            createFolders: false,
+          });
+        }
+
+        // Copy remaining files
+        for (const [path, fileObj] of entries) {
+          if (operationCancelled) throw new Error("Cancelled");
+          if (fileObj.dir || path === "mimetype") continue;
+          const low = path.toLowerCase();
+          if (
+            low.match(/\.(png|gif|webp|bmp|jpg|jpeg)$/) ||
+            low.match(/\.(xhtml|html|htm)$/) ||
+            low.endsWith(".opf")
+          )
+            continue;
+          let data = await fileObj.async("arraybuffer");
+          if (low.endsWith(".css")) {
+            let t = await safeReadText(fileObj);
+            for (const [o, n] of Object.entries(renamed))
+              t = t.split(o.split("/").pop()).join(n.split("/").pop());
+            data = new TextEncoder().encode(t);
+          } else if (low.endsWith(".ncx")) {
+            let t = await safeReadText(fileObj);
+            for (const [o, n] of Object.entries(renamed))
+              t = t.split(o.split("/").pop()).join(n.split("/").pop());
+            const oldT = t;
+            t = syncNCXIdentifier(t, mainIdentifier);
+            if (t !== oldT) logFix("NCX identifier", "Synced with OPF");
+            data = new TextEncoder().encode(t);
+          }
+          out.file(path, data, {
+            compression: "DEFLATE",
+            compressionOptions: { level: 8 },
+            createFolders: false,
+          });
+        }
+
+        if (progressCallback) progressCallback(100);
+        const newBlob = await out.generateAsync({
+          type: "blob",
+          mimeType: "application/epub+zip",
+        });
+        const timeElapsed = (Date.now() - startTime) / 1000;
+        log("Conversion complete!", "success", "DONE");
+        logSummary(
+          totalImageSize > 0 ? totalImageSize : originalSize,
+          totalNewSize > 0 ? totalNewSize : newBlob.size,
+          timeElapsed,
+        );
+        return newBlob;
+      }
+
+      // ── UI Logic ─────────────────────────────────────────────────────────────────
+
+      function toggleSettings() {
+        const body = document.getElementById("settingsBody");
+        const icon = document.getElementById("settingsToggleIcon");
+        const visible =
+          body.style.display !== "none" && body.style.display !== "";
+        body.style.display = visible ? "none" : "grid";
+        icon.textContent = visible ? "▼" : "▲";
+      }
+
+      // Initialize: show settings by default
+      document.addEventListener("DOMContentLoaded", () => {
+        document.getElementById("settingsBody").style.display = "grid";
+        document.getElementById("settingsToggleIcon").textContent = "▲";
+      });
+
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.getElementById("fileInput");
+      const fileList = document.getElementById("fileList");
+      const convertBtn = document.getElementById("convertBtn");
+
+      let selectedFiles = [];
+
+      function updateFileList() {
+        if (selectedFiles.length === 0) {
+          fileList.style.display = "none";
+          convertBtn.disabled = true;
+          convertBtn.textContent = "Optimize & Download";
+          return;
+        }
+        fileList.style.display = "block";
+        fileList.innerHTML = selectedFiles
+          .map(
+            (f) =>
+              `<div class="file-item"><span class="file-item-icon">📖</span>${escapeHtml(f.name)} <span class="log-detail">(${formatBytes(f.size)})</span></div>`,
+          )
+          .join("");
+        convertBtn.disabled = false;
+        convertBtn.textContent =
+          selectedFiles.length > 1
+            ? "Optimize & Download All"
+            : "Optimize & Download";
+      }
+
+      fileInput.addEventListener("change", () => {
+        selectedFiles = Array.from(fileInput.files).filter((f) =>
+          f.name.toLowerCase().endsWith(".epub"),
+        );
+        updateFileList();
+      });
+
+      dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZone.classList.add("drag-over");
+      });
+      dropZone.addEventListener("dragleave", () =>
+        dropZone.classList.remove("drag-over"),
+      );
+      dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("drag-over");
+        selectedFiles = Array.from(e.dataTransfer.files).filter((f) =>
+          f.name.toLowerCase().endsWith(".epub"),
+        );
+        updateFileList();
+      });
+
+      convertBtn.addEventListener("click", async () => {
+        if (selectedFiles.length === 0) return;
+
+        // Read settings
+        MAX_WIDTH = parseInt(document.getElementById("maxWidth").value) || 480;
+        MAX_HEIGHT =
+          parseInt(document.getElementById("maxHeight").value) || 800;
+        JPEG_QUALITY = parseInt(document.getElementById("quality").value) || 85;
+        ENABLE_GRAYSCALE = document.getElementById("grayscale").checked;
+        HANDEDNESS = document.getElementById("handedness").value;
+        OVERLAP_PERCENT =
+          parseInt(document.getElementById("overlap").value) || 5;
+        SPLIT_MODE = parseInt(document.getElementById("splitMode").value) || 0;
+
+        convertBtn.disabled = true;
+        convertBtn.textContent = "Converting…";
+        operationCancelled = false;
+
+        for (const file of selectedFiles) {
+          try {
+            const blob = await convertEpubFile(file, () => {});
+            // Trigger browser download
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = file.name.replace(/\.epub$/i, "-optimized.epub");
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+          } catch (err) {
+            logError(
+              `Failed to convert ${escapeHtml(file.name)}: ${err.message}`,
+            );
+          }
+        }
+
+        convertBtn.disabled = false;
+        convertBtn.textContent =
+          selectedFiles.length > 1
+            ? "Optimize & Download All"
+            : "Optimize & Download";
+      });
+
+      updateFileList();
+    </script>
+  </body>
+</html>

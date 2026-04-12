@@ -1,0 +1,9 @@
+cli/node_modules/
+browser/
+.env
+.env.example
+scripts/epub-optimizer.service
+scripts/epub-watcher.service
+scripts/install-epub-optimizer.sh
+scripts/install-epub-watcher.sh
+README.md
