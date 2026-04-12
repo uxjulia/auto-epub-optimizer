@@ -1,8 +1,8 @@
-# Automated EPUB Optimizer Workflow for XTEINK X4
+# Automated Baseline JPEG EPUB Optimizer Workflow
 
-**<div align="center">Drop EPUB into folder → Automatically gets optimized for X4 → File is moved to your library</div>**<br/>
+**<div align="center">Drop EPUB into folder → Automatically gets optimized → File is moved to your library</div>**<br/>
 
-Automatically (or manually) optimizes EPUB files for the XTEINK X4. Converts images to baseline JPEG, applies grayscale, resizes to fit the display, and handles wide-image splitting with rotation. The EPUB optimizer was forked from the built-in browser EPUB optimizer within [Crosspoint](https://github.com/crosspoint-reader/crosspoint-reader). This repo just creates a standalone browser and node.js version that can be run via a shell script to automate the process.
+Automatically (or manually) optimizes EPUB files for e-readers like the XTEINK X4. Converts images to baseline JPEG, applies grayscale, resizes to fit the display, and handles wide-image splitting with rotation. The EPUB optimizer was forked from the built-in browser EPUB optimizer within [Crosspoint](https://github.com/crosspoint-reader/crosspoint-reader). This repo just creates a standalone browser and node.js version that can be run via a shell script to automate the process.
 
 Three ways to use it:
 
@@ -22,6 +22,8 @@ I have two e-readers: a Kindle Colorsoft and an XTEINK X4. I wanted a single dro
 - Single-library mode also supported: leave `CALIBRE_WATCH_FOLDER` unset and only the optimized copy is produced
 
 # Usage
+
+> Note: The default settings are for the XTEINK X4 where the screen settings are 480x800. If you have a different device size, you need to change those settings in `cli/optimize.js` or in the browser when using the browser version.
 
 ## Docker Compose
 
