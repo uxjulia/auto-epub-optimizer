@@ -59,7 +59,11 @@ while true; do
     log "Processing: $filename"
 
     # Run the optimizer
-    node "$OPTIMIZER_SCRIPT" -o "$OUTPUT_DIR" "$staging" >> "$LOG_FILE" 2>&1
+    # Optional env vars: EPUB_NORMALIZE=1, EPUB_CONTRAST=1.3
+    node "$OPTIMIZER_SCRIPT" -o "$OUTPUT_DIR" \
+      ${EPUB_NORMALIZE:+--normalize} \
+      ${EPUB_CONTRAST:+--contrast "$EPUB_CONTRAST"} \
+      "$staging" >> "$LOG_FILE" 2>&1
     exit_code=$?
 
     if [ $exit_code -eq 0 ]; then
