@@ -39,21 +39,29 @@ while true; do
   while IFS= read -r -d '' filepath; do
     filename=$(basename "$filepath")
 
-    # Optionally copy to Calibre's watch folder before processing
-    if [ -n "$CALIBRE_WATCH_FOLDER" ]; then
-      if cp "$filepath" "$CALIBRE_WATCH_FOLDER/$filename" 2>/dev/null; then
-        log "Copied to Calibre watch folder: $filename"
-      else
-        log "WARNING: Could not copy $filename to $CALIBRE_WATCH_FOLDER — continuing anyway"
-      fi
-    fi
-
     # Atomically move to processing/ to claim the file (prevents double-processing
     # if multiple WSL2 sessions or scripts are running)
     staging="$PROCESSING_DIR/$filename"
     if ! mv "$filepath" "$staging" 2>/dev/null; then
       # Another process already claimed it — skip
       continue
+    fi
+
+    # Skip zero-byte files (Windows NTFS can recreate empty stubs after a move)
+    if [ ! -s "$staging" ]; then
+      log "WARNING: $filename is empty — skipping and removing"
+      rm -f "$staging"
+      continue
+    fi
+
+    # Optionally copy to Calibre's watch folder before processing
+    # (done after the empty-file check so CWA never receives a stub)
+    if [ -n "$CALIBRE_WATCH_FOLDER" ]; then
+      if cp "$staging" "$CALIBRE_WATCH_FOLDER/$filename" 2>/dev/null; then
+        log "Copied to Calibre watch folder: $filename"
+      else
+        log "WARNING: Could not copy $filename to $CALIBRE_WATCH_FOLDER — continuing anyway"
+      fi
     fi
 
     log "Processing: $filename"
