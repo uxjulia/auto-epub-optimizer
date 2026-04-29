@@ -2,7 +2,7 @@
 
 **<div align="center">Drop EPUB into folder → Automatically gets optimized → File is moved to your library</div>**<br/>
 
-Automatically (or manually) optimizes EPUB files for e-readers like the XTEINK X4. Converts images to baseline JPEG, applies grayscale, resizes to fit the display, and handles wide-image splitting with rotation. The EPUB optimizer was forked from the built-in browser EPUB optimizer within [Crosspoint](https://github.com/crosspoint-reader/crosspoint-reader). This repo just creates a standalone browser and node.js version that can be run via a shell script to automate the process.
+Automatically (or manually) optimizes EPUB files for e-readers like the XTEINK X4. Converts images to baseline JPEG, applies grayscale, resizes to fit the display, and handles wide-image splitting with rotation. Cover images receive automatic contrast enhancement so light-colored covers (e.g. white text on a light background) render clearly on e-ink without any extra flags. The EPUB optimizer was forked from the built-in browser EPUB optimizer within [Crosspoint](https://github.com/crosspoint-reader/crosspoint-reader). This repo just creates a standalone browser and node.js version that can be run via a shell script to automate the process.
 
 Three ways to use it:
 
@@ -102,6 +102,8 @@ Edit `~/.config/epub-optimizer/.env`:
 | `WATCHER_LOG_FILE`     | Log path for the watcher service (default: `~/.local/log/epub-watcher.log`)                                                        |
 | `POLL_INTERVAL`        | Seconds between bookdrop scans (default: `5`)                                                                                      |
 | `KEEP_DAYS`            | Days to keep files in `bookdrop/processed/` before auto-deletion (default: `5`)                                                    |
+| `EPUB_NORMALIZE`       | Optional - set to `1` to apply luminance normalization to interior images (see [CLI: contrast options](#contrast-options))         |
+| `EPUB_CONTRAST`        | Optional - set to a multiplier like `1.3` to boost contrast on interior images (see [CLI: contrast options](#contrast-options))    |
 
 ### 2. Install
 
@@ -175,6 +177,8 @@ Open `browser/index.html` directly in a browser. Everything runs locally, no fil
 | Rotation     | Clockwise | Direction images are rotated before an H-Split                            |
 | Grayscale    | On        | Convert images to grayscale                                               |
 
+Cover contrast enhancement runs automatically in the browser version as well — no setting required.
+
 ---
 
 ## CLI
@@ -200,6 +204,8 @@ node optimize.js [options] <directory>
 | `-o, --output <dir>`   | `./optimized` | Output directory                         |
 | `-q, --quality <n>`    | `85`          | JPEG quality (1-100)                     |
 | `--no-grayscale`       | -             | Disable grayscale conversion             |
+| `-n, --normalize`      | -             | Normalize luminance range on interior images |
+| `--contrast <n>`       | -             | Contrast multiplier for interior images (e.g. `1.2`, `1.5`) |
 | `-W, --max-width <n>`  | `480`         | Max image width in px                    |
 | `-H, --max-height <n>` | `800`         | Max image height in px                   |
 | `--split <mode>`       | `none`        | Split mode: `none`, `h-split`, `v-split` |
@@ -209,9 +215,34 @@ node optimize.js [options] <directory>
 | `-v, --verbose`        | -             | Print per-image details                  |
 | `--help`               | -             | Show help                                |
 
-### Example
+### Cover contrast
+
+Cover images are automatically enhanced for e-ink regardless of any flags. The optimizer detects the cover via the OPF manifest and applies a dedicated pipeline: grayscale → normalize → gamma correction. This pushes light-colored backgrounds (e.g. teal, beige, pale yellow) visibly darker while keeping white text at full brightness, preventing the washed-out look that occurs on low-contrast e-ink displays. No configuration is required.
+
+### Contrast options
+
+`--normalize` and `--contrast` apply only to **interior images** — the cover is always handled separately as described above.
+
+- **`--normalize`** stretches the image's existing luminance range to fill 0–255. Best for scanned books or older EPUBs where the source images look flat because they were never encoded at full range (e.g. whites that top out at 220 instead of 255).
+- **`--contrast <n>`** applies a fixed linear boost pivoted around mid-gray. Best for images that are already full-range but still look soft on e-ink — values like `1.2`–`1.3` add punch without clipping.
+- Using both together first expands the range, then amplifies the separation. Use cautiously: values above `1.4` can crush shadow and highlight detail.
+
+### Examples
 
 ```bash
+# Standard optimization (cover enhanced automatically)
+node optimize.js book.epub
+
+# Interior images that look flat from scanning
+node optimize.js --normalize book.epub
+
+# Interior images that need more punch on e-ink
+node optimize.js --contrast 1.2 book.epub
+
+# Both, for scanned books with soft interiors
+node optimize.js --normalize --contrast 1.2 book.epub
+
+# Custom output and display size
 node optimize.js -q 80 -W 600 -H 900 --output ./out book.epub
 ```
 

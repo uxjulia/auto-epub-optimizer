@@ -15,6 +15,8 @@
  *   -o, --output <dir>       Output directory (default: ./optimized)
  *   -q, --quality <n>        JPEG quality 1-100 (default: 85)
  *       --no-grayscale       Disable grayscale conversion
+ *   -n  --normalize          Enhance contrast by stretching luminance
+ *   -c  --contrast <n>       Contrast multiplier (e.g., 1.2 or 1.5)
  *   -W, --max-width <n>      Max image width in px (default: 480)
  *   -H, --max-height <n>     Max image height in px (default: 800)
  *       --overlap <n>        Overlap % for splits: 5|10|15|20|25 (default: 5)
@@ -51,11 +53,13 @@ const settings = {
   outputDir: "./optimized",
   quality: 85,
   grayscale: true,
+  normalize: false,
+  contrast: null,
   maxWidth: 480,
   maxHeight: 800,
   overlapPercent: 5,
   rotation: "cw", // 'cw' | 'ccw'
-  imageState: 0,  // 0=none, 1=h-split, 2=v-split
+  imageState: 0, // 0=none, 1=h-split, 2=v-split
   suffix: "-optimized",
   verbose: false,
 };
@@ -74,6 +78,14 @@ for (let i = 0; i < argv.length; i++) {
       break;
     case "--no-grayscale":
       settings.grayscale = false;
+      break;
+    case "-n":
+    case "--normalize":
+      settings.normalize = true;
+      break;
+    case "-c":
+    case "--contrast":
+      settings.contrast = parseFloat(argv[++i]);
       break;
     case "-W":
     case "--max-width":
@@ -94,7 +106,10 @@ for (let i = 0; i < argv.length; i++) {
       if (val === "h-split") settings.imageState = 1;
       else if (val === "v-split") settings.imageState = 2;
       else if (val === "none") settings.imageState = 0;
-      else { console.error(`Invalid --split value: ${val} (use none, h-split, or v-split)`); process.exit(1); }
+      else {
+        console.error(`Invalid --split value: ${val} (use none, h-split, or v-split)`);
+        process.exit(1);
+      }
       break;
     }
     case "--suffix":
@@ -148,7 +163,7 @@ fs.mkdirSync(settings.outputDir, { recursive: true });
 (async () => {
   console.log(`\nEPUB Optimizer`);
   console.log(
-    `Settings: quality=${settings.quality}% | grayscale=${settings.grayscale} | ${settings.maxWidth}×${settings.maxHeight} | split=${["none","h-split","v-split"][settings.imageState]||"none"} | overlap=${settings.overlapPercent}% | rotation=${settings.rotation}\n`,
+    `Settings: quality=${settings.quality}% | grayscale=${settings.grayscale} | normalize=${settings.normalize} | contrast=${settings.contrast || "none"} | ${settings.maxWidth}×${settings.maxHeight} | split=${["none", "h-split", "v-split"][settings.imageState] || "none"} | overlap=${settings.overlapPercent}% | rotation=${settings.rotation}\n`,
   );
 
   let succeeded = 0,
@@ -184,15 +199,7 @@ fs.mkdirSync(settings.outputDir, { recursive: true });
 // ── EPUB Optimizer ────────────────────────────────────────────────────────────
 
 async function optimizeEpub(inputBuffer, cfg) {
-  const {
-    quality,
-    grayscale,
-    maxWidth,
-    maxHeight,
-    overlapPercent,
-    rotation,
-    verbose,
-  } = cfg;
+  const { quality, grayscale, maxWidth, maxHeight, overlapPercent, rotation, verbose } = cfg;
   const isClockwise = rotation === "cw";
 
   const zip = await JSZip.loadAsync(inputBuffer);
@@ -218,6 +225,17 @@ async function optimizeEpub(inputBuffer, cfg) {
     out.file("mimetype", mt, { compression: "STORE", createFolders: false });
   }
 
+  // Pre-scan OPF to identify cover image path for targeted contrast enhancement
+  let coverZipPath = null;
+  for (const [fp, fo] of entries) {
+    if (!fo.dir && fp.toLowerCase().endsWith(".opf")) {
+      const opfText = await safeReadText(fo);
+      const opfDir = fp.includes("/") ? fp.substring(0, fp.lastIndexOf("/")) : "";
+      coverZipPath = extractCoverImagePath(opfText, opfDir);
+      break;
+    }
+  }
+
   // ── First pass: images ───────────────────────────────────────────────────
   for (const [filePath, fileObj] of entries) {
     if (fileObj.dir || filePath === "mimetype") continue;
@@ -227,12 +245,10 @@ async function optimizeEpub(inputBuffer, cfg) {
       const data = await fileObj.async("nodebuffer");
       let result;
       try {
-        result = await processImage(data, cfg.imageState, filePath, cfg);
+        const imageCfg = filePath === coverZipPath ? { ...cfg, isCover: true } : cfg;
+        result = await processImage(data, cfg.imageState, filePath, imageCfg);
       } catch (err) {
-        if (verbose)
-          console.log(
-            `       ⚠ Image error ${path.basename(filePath)}: ${err.message} — using original`,
-          );
+        if (verbose) console.log(`       ⚠ Image error ${path.basename(filePath)}: ${err.message} — using original`);
         result = {
           parts: [{ data, suffix: "", width: 0, height: 0, size: data.length }],
           meta: {
@@ -258,24 +274,19 @@ async function optimizeEpub(inputBuffer, cfg) {
       const baseName = filePath.replace(/\.[^.]+$/, "");
 
       if (parts.length === 1 && parts[0].suffix === "") {
-        const newPath =
-          renamed[filePath] || filePath.replace(/\.[^.]+$/, ".jpg");
+        const newPath = renamed[filePath] || filePath.replace(/\.[^.]+$/, ".jpg");
         out.file(newPath, parts[0].data, {
           compression: "STORE",
           createFolders: false,
         });
       } else {
         const origName = path.basename(filePath);
-        const origDir = filePath.includes("/")
-          ? filePath.substring(0, filePath.lastIndexOf("/"))
-          : "";
+        const origDir = filePath.includes("/") ? filePath.substring(0, filePath.lastIndexOf("/")) : "";
         splitImages[filePath] = { origName, origDir, parts: [] };
         for (const part of parts) {
           const partName = path.basename(baseName) + part.suffix + ".jpg";
           const partPath =
-            (filePath.includes("/")
-              ? filePath.substring(0, filePath.lastIndexOf("/") + 1)
-              : "") + partName;
+            (filePath.includes("/") ? filePath.substring(0, filePath.lastIndexOf("/") + 1) : "") + partName;
           out.file(partPath, part.data, {
             compression: "STORE",
             createFolders: false,
@@ -301,8 +312,7 @@ async function optimizeEpub(inputBuffer, cfg) {
     let t = content;
 
     // Rename image extensions in text
-    for (const [o, n] of Object.entries(renamed))
-      t = t.split(path.basename(o)).join(path.basename(n));
+    for (const [o, n] of Object.entries(renamed)) t = t.split(path.basename(o)).join(path.basename(n));
 
     // Fix SVG covers and SVG-wrapped images (regex-based, no DOM)
     const r = fixSvgCover(t);
@@ -326,16 +336,12 @@ async function optimizeEpub(inputBuffer, cfg) {
         "gi",
       );
       t = t.replace(imgRegex, (match, pre, src, post) => {
-        const newSrc = src
-          .replace(origName, parts[0].imgName)
-          .replace(newName, parts[0].imgName);
+        const newSrc = src.replace(origName, parts[0].imgName).replace(newName, parts[0].imgName);
         // Build subsequent part <img> tags
         const extras = parts
           .slice(1)
           .map((p) => {
-            const partSrc = src
-              .replace(origName, p.imgName)
-              .replace(newName, p.imgName);
+            const partSrc = src.replace(origName, p.imgName).replace(newName, p.imgName);
             return `<div><img src="${partSrc}" alt="" style="max-width:100%;height:auto"/></div>`;
           })
           .join("");
@@ -363,11 +369,8 @@ async function optimizeEpub(inputBuffer, cfg) {
   // ── Third pass: OPF ──────────────────────────────────────────────────────
   if (opfContent) {
     let t = opfContent;
-    for (const [o, n] of Object.entries(renamed))
-      t = t.split(path.basename(o)).join(path.basename(n));
-    const opfDir = opfPath.includes("/")
-      ? opfPath.substring(0, opfPath.lastIndexOf("/"))
-      : "";
+    for (const [o, n] of Object.entries(renamed)) t = t.split(path.basename(o)).join(path.basename(n));
+    const opfDir = opfPath.includes("/") ? opfPath.substring(0, opfPath.lastIndexOf("/")) : "";
     t = fixOPF(t, opfDir, splitImages);
     out.file(opfPath, t, {
       compression: "DEFLATE",
@@ -380,24 +383,18 @@ async function optimizeEpub(inputBuffer, cfg) {
   for (const [filePath, fileObj] of entries) {
     if (fileObj.dir || filePath === "mimetype") continue;
     const low = filePath.toLowerCase();
-    if (
-      low.match(/\.(png|gif|webp|bmp|jpg|jpeg)$/) ||
-      low.match(/\.(xhtml|html|htm)$/) ||
-      low.endsWith(".opf")
-    )
+    if (low.match(/\.(png|gif|webp|bmp|jpg|jpeg)$/) || low.match(/\.(xhtml|html|htm)$/) || low.endsWith(".opf"))
       continue;
 
     let data = await fileObj.async("nodebuffer");
 
     if (low.endsWith(".css")) {
       let t = await safeReadText(fileObj);
-      for (const [o, n] of Object.entries(renamed))
-        t = t.split(path.basename(o)).join(path.basename(n));
+      for (const [o, n] of Object.entries(renamed)) t = t.split(path.basename(o)).join(path.basename(n));
       data = Buffer.from(t, "utf8");
     } else if (low.endsWith(".ncx")) {
       let t = await safeReadText(fileObj);
-      for (const [o, n] of Object.entries(renamed))
-        t = t.split(path.basename(o)).join(path.basename(n));
+      for (const [o, n] of Object.entries(renamed)) t = t.split(path.basename(o)).join(path.basename(n));
       t = syncNCXIdentifier(t, mainIdentifier);
       data = Buffer.from(t, "utf8");
     }
@@ -424,9 +421,24 @@ async function optimizeEpub(inputBuffer, cfg) {
 //
 // Controlled via --split flag (none|h-split|v-split). Defaults to none (state 0).
 
+function applyColorFilters(s, cfg) {
+  if (cfg.isCover) {
+    // Grayscale first, then normalize the luma range, then gamma-darken midtones so
+    // light backgrounds (e.g. teal) get visually separated from white text on e-ink.
+    return s.grayscale().normalize().gamma(2.2);
+  }
+  if (cfg.grayscale) s = s.grayscale();
+  if (cfg.normalize) s = s.normalize(); // normalize after grayscale for predictable luma stretching
+  if (cfg.contrast) {
+    const a = cfg.contrast;
+    const b = 128 - 128 * a; // Pivot around mid-gray
+    s = s.linear(a, b);
+  }
+  return s;
+}
+
 async function processImage(data, imageState, filePath, cfg) {
-  const { quality, grayscale, maxWidth, maxHeight, overlapPercent, rotation } =
-    cfg;
+  const { quality, grayscale, maxWidth, maxHeight, overlapPercent, rotation } = cfg;
   const isClockwise = rotation === "cw";
   const origSize = data.length;
 
@@ -453,9 +465,7 @@ async function processImage(data, imageState, filePath, cfg) {
 
     // Step 2: rotate (CW = 90°, CCW = 270°)
     const rotAngle = isClockwise ? 90 : 270;
-    const rotated = await sharp(resized)
-      .rotate(rotAngle, { background: "#ffffff" })
-      .toBuffer();
+    const rotated = await sharp(resized).rotate(rotAngle, { background: "#ffffff" }).toBuffer();
 
     const rotMeta = await sharp(rotated).metadata();
     const rotW = rotMeta.width,
@@ -464,7 +474,7 @@ async function processImage(data, imageState, filePath, cfg) {
     if (rotW <= maxWidth) {
       // No split needed
       let s = sharp(rotated);
-      if (grayscale) s = s.grayscale();
+      s = applyColorFilters(s, cfg);
       const buf = await s.jpeg({ quality }).toBuffer();
       return {
         parts: [
@@ -487,16 +497,7 @@ async function processImage(data, imageState, filePath, cfg) {
         },
       };
     }
-    return splitBuffer(
-      rotated,
-      rotW,
-      rotH,
-      origW,
-      origH,
-      origSize,
-      isClockwise,
-      cfg,
-    );
+    return splitBuffer(rotated, rotW, rotH, origW, origH, origSize, isClockwise, cfg);
   }
 
   if (imageState === 2) {
@@ -514,12 +515,10 @@ async function processImage(data, imageState, filePath, cfg) {
 
     if (sW <= maxWidth) {
       let s = sharp(scaled);
-      if (grayscale) s = s.grayscale();
+      s = applyColorFilters(s, cfg);
       const buf = await s.jpeg({ quality }).toBuffer();
       return {
-        parts: [
-          { data: buf, suffix: "", width: sW, height: sH, size: buf.length },
-        ],
+        parts: [{ data: buf, suffix: "", width: sW, height: sH, size: buf.length }],
         meta: {
           origW,
           origH,
@@ -547,9 +546,8 @@ async function processImage(data, imageState, filePath, cfg) {
       rotH = rotMeta.height;
 
     let s = sharp(rotated);
-    if (rotW > maxWidth || rotH > maxHeight)
-      s = s.resize(maxWidth, maxHeight, { fit: "inside" });
-    if (grayscale) s = s.grayscale();
+    if (rotW > maxWidth || rotH > maxHeight) s = s.resize(maxWidth, maxHeight, { fit: "inside" });
+    s = applyColorFilters(s, cfg);
     const buf = await s.jpeg({ quality }).toBuffer();
     const finalMeta = await sharp(buf).metadata();
     return {
@@ -576,9 +574,8 @@ async function processImage(data, imageState, filePath, cfg) {
 
   // State 0: Normal — scale to fit, convert to JPEG, optional grayscale
   let s = sharp(data).flatten({ background: "#ffffff" });
-  if (origW > maxWidth || origH > maxHeight)
-    s = s.resize(maxWidth, maxHeight, { fit: "inside" });
-  if (grayscale) s = s.grayscale();
+  if (origW > maxWidth || origH > maxHeight) s = s.resize(maxWidth, maxHeight, { fit: "inside" });
+  s = applyColorFilters(s, cfg);
   const buf = await s.jpeg({ quality }).toBuffer();
   const finalMeta = await sharp(buf).metadata();
   return {
@@ -603,16 +600,7 @@ async function processImage(data, imageState, filePath, cfg) {
   };
 }
 
-async function splitBuffer(
-  inputBuf,
-  cW,
-  cH,
-  origW,
-  origH,
-  origSize,
-  isClockwise,
-  cfg,
-) {
+async function splitBuffer(inputBuf, cW, cH, origW, origH, origSize, isClockwise, cfg) {
   const { quality, grayscale, maxWidth, overlapPercent } = cfg;
   const minOverlapPx = Math.round(maxWidth * (overlapPercent / 100));
   const maxStep = maxWidth - minOverlapPx;
@@ -648,7 +636,7 @@ async function splitBuffer(
       width: maxWidth,
       height: cH,
     });
-    if (grayscale) s = s.grayscale();
+    s = applyColorFilters(s, cfg);
     const buf = await s.jpeg({ quality }).toBuffer();
     parts.push({
       data: buf,
@@ -680,8 +668,7 @@ async function splitBuffer(
 async function safeReadText(fileObj) {
   const raw = await fileObj.async("nodebuffer");
   let offset = 0;
-  if (raw.length >= 3 && raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf)
-    offset = 3;
+  if (raw.length >= 3 && raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf) offset = 3;
   try {
     return raw.subarray(offset).toString("utf8");
   } catch (e) {}
@@ -689,11 +676,7 @@ async function safeReadText(fileObj) {
 }
 
 function xmlEscape(str) {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function escapeRegex(str) {
@@ -711,14 +694,9 @@ function decodeHref(href) {
 function extractIdentifier(opfContent) {
   // Regex-only (no DOM parser needed in CLI)
   let mainIdentifier = null;
-  const uniqueIdMatch = opfContent.match(
-    /<(?:\w+:)?package[^>]*unique-identifier=["']([^"']+)["']/i,
-  );
+  const uniqueIdMatch = opfContent.match(/<(?:\w+:)?package[^>]*unique-identifier=["']([^"']+)["']/i);
   if (uniqueIdMatch) {
-    const idRegex = new RegExp(
-      `<dc:identifier[^>]*id=["']${uniqueIdMatch[1]}["'][^>]*>([^<]+)</dc:identifier>`,
-      "i",
-    );
+    const idRegex = new RegExp(`<dc:identifier[^>]*id=["']${uniqueIdMatch[1]}["'][^>]*>([^<]+)</dc:identifier>`, "i");
     const idMatch = opfContent.match(idRegex);
     if (idMatch) mainIdentifier = idMatch[1].trim();
   }
@@ -763,28 +741,18 @@ function fixOPF(opfText, opfDir, splitImages = {}) {
   // Handle split images: update original href → part1 href, add manifest entries for extra parts
   for (const [splitKey, splitInfo] of Object.entries(splitImages)) {
     const parts = splitInfo.parts || splitInfo;
-    let origHref =
-      opfDir && splitKey.startsWith(opfDir + "/")
-        ? splitKey.substring(opfDir.length + 1)
-        : splitKey;
+    let origHref = opfDir && splitKey.startsWith(opfDir + "/") ? splitKey.substring(opfDir.length + 1) : splitKey;
     const origHrefJpg = origHref.replace(/\.(png|gif|webp|bmp|jpeg)$/i, ".jpg");
     const part1Href = origHrefJpg.replace(/\.jpg$/i, "_part1.jpg");
-    const origImgRegex = new RegExp(
-      `(href=["'])(${escapeRegex(origHref)}|${escapeRegex(origHrefJpg)})(["'])`,
-      "gi",
-    );
+    const origImgRegex = new RegExp(`(href=["'])(${escapeRegex(origHref)}|${escapeRegex(origHrefJpg)})(["'])`, "gi");
     t = t.replace(origImgRegex, `$1${part1Href}$3`);
     let adds = "";
     for (let j = 1; j < parts.length; j++) {
       const p = parts[j];
-      const href =
-        opfDir && p.path.startsWith(opfDir + "/")
-          ? p.path.substring(opfDir.length + 1)
-          : p.path;
+      const href = opfDir && p.path.startsWith(opfDir + "/") ? p.path.substring(opfDir.length + 1) : p.path;
       adds += `<item id="img-${xmlEscape(p.id)}" href="${xmlEscape(href)}" media-type="image/jpeg"/>\n`;
     }
-    if (adds && t.includes("</manifest>"))
-      t = t.replace("</manifest>", adds + "</manifest>");
+    if (adds && t.includes("</manifest>")) t = t.replace("</manifest>", adds + "</manifest>");
   }
 
   // Ensure cover meta tag
@@ -794,48 +762,48 @@ function fixOPF(opfText, opfDir, splitImages = {}) {
   return t;
 }
 
+function extractCoverImagePath(opfText, opfDir) {
+  let coverId = null,
+    m;
+  if ((m = opfText.match(/<(?:\w+:)?meta\s+name=["']cover["']\s+content=["']([^"']+)["']/i))) coverId = m[1];
+  if (!coverId && (m = opfText.match(/<(?:\w+:)?meta\s+content=["']([^"']+)["']\s+name=["']cover["']/i)))
+    coverId = m[1];
+  if (
+    !coverId &&
+    (m = opfText.match(/<(?:\w+:)?item\b[^>]+id=["']([^"']+)["'][^>]+properties="[^"]*cover-image[^"]*"/i))
+  )
+    coverId = m[1];
+  if (
+    !coverId &&
+    (m = opfText.match(/<(?:\w+:)?item\b[^>]+properties="[^"]*cover-image[^"]*"[^>]+id=["']([^"']+)["']/i))
+  )
+    coverId = m[1];
+  if (!coverId && (m = opfText.match(/<(?:\w+:)?item\b[^>]*id=["']([^"']*cover[^"']*)["'][^>]*media-type="image\//i)))
+    coverId = m[1];
+  if (!coverId) return null;
+
+  const eid = escapeRegex(coverId);
+  const hm =
+    opfText.match(new RegExp(`<(?:\\w+:)?item\\b[^>]+id=["']${eid}["'][^>]+href=["']([^"']+)["']`, "i")) ||
+    opfText.match(new RegExp(`<(?:\\w+:)?item\\b[^>]+href=["']([^"']+)["'][^>]+id=["']${eid}["']`, "i"));
+  if (!hm) return null;
+
+  const href = decodeHref(hm[1]);
+  return opfDir ? `${opfDir}/${href}` : href;
+}
+
 function ensureCoverMetaRegex(o) {
   let coverId = null,
     m;
-  if (
-    !coverId &&
-    (m = o.match(
-      /<\w+:?item[^>]+id="([^"]+)"[^>]+properties="[^"]*cover-image[^"]*"/i,
-    ))
-  )
+  if (!coverId && (m = o.match(/<\w+:?item[^>]+id="([^"]+)"[^>]+properties="[^"]*cover-image[^"]*"/i))) coverId = m[1];
+  if (!coverId && (m = o.match(/<\w+:?item[^>]+properties="[^"]*cover-image[^"]*"[^>]+id="([^"]+)"/i))) coverId = m[1];
+  if (!coverId && (m = o.match(/<\w+:?item[^>]*id="([^"]+)"[^>]*href="[^"]*cover[^"]*"[^>]*media-type="image\//i)))
     coverId = m[1];
-  if (
-    !coverId &&
-    (m = o.match(
-      /<\w+:?item[^>]+properties="[^"]*cover-image[^"]*"[^>]+id="([^"]+)"/i,
-    ))
-  )
+  if (!coverId && (m = o.match(/<\w+:?item[^>]*href="[^"]*cover[^"]*"[^>]*id="([^"]+)"[^>]*media-type="image\//i)))
     coverId = m[1];
-  if (
-    !coverId &&
-    (m = o.match(
-      /<\w+:?item[^>]*id="([^"]+)"[^>]*href="[^"]*cover[^"]*"[^>]*media-type="image\//i,
-    ))
-  )
-    coverId = m[1];
-  if (
-    !coverId &&
-    (m = o.match(
-      /<\w+:?item[^>]*href="[^"]*cover[^"]*"[^>]*id="([^"]+)"[^>]*media-type="image\//i,
-    ))
-  )
-    coverId = m[1];
-  if (
-    !coverId &&
-    (m = o.match(
-      /<\w+:?item[^>]*id="([^"]*cover[^"]*)"[^>]*media-type="image\//i,
-    ))
-  )
-    coverId = m[1];
+  if (!coverId && (m = o.match(/<\w+:?item[^>]*id="([^"]*cover[^"]*)"[^>]*media-type="image\//i))) coverId = m[1];
   if (!coverId) return { o, fixed: false };
-  const metaMatch = o.match(
-    /<\w+:?meta\s+name=["']cover["']\s+content=["']([^"']+)["']/i,
-  );
+  const metaMatch = o.match(/<\w+:?meta\s+name=["']cover["']\s+content=["']([^"']+)["']/i);
   if (metaMatch) {
     if (metaMatch[1] === coverId) return { o, fixed: false };
     o = o.replace(
@@ -858,8 +826,7 @@ function ensureCoverMetaRegex(o) {
 
 function fixSvgCover(content) {
   const hasSvg = content.includes("<svg") || content.includes("<svg:");
-  if (!hasSvg || !content.includes("xlink:href"))
-    return { c: content, fixed: false };
+  if (!hasSvg || !content.includes("xlink:href")) return { c: content, fixed: false };
   if (
     !content.includes("calibre:cover") &&
     !content.includes('name="cover"') &&
@@ -881,8 +848,7 @@ function fixSvgCover(content) {
 
 function fixSvgWrappedImages(content) {
   const hasSvg = content.includes("<svg") || content.includes("<svg:");
-  if (!hasSvg || !content.includes("xlink:href"))
-    return { c: content, fixed: false, count: 0 };
+  if (!hasSvg || !content.includes("xlink:href")) return { c: content, fixed: false, count: 0 };
   let fixedCount = 0;
   const result = content.replace(
     /<(?:svg:)?svg\b[^>]*>[\s\S]*?<(?:svg:)?image\b[^>]*xlink:href=["']([^"']+)["'][^>]*\/?>\s*<\/(?:svg:)?svg>/gi,
@@ -925,6 +891,8 @@ Options:
   -o, --output <dir>       Output directory           (default: ./optimized)
   -q, --quality <n>        JPEG quality 1-100         (default: 85)
       --no-grayscale       Disable grayscale
+  -n, --normalize          Enhance contrast by stretching luminance
+      --contrast <n>       Contrast multiplier (e.g., 1.2 or 1.5)
   -W, --max-width <n>      Max image width px         (default: 480)
   -H, --max-height <n>     Max image height px        (default: 800)
       --split <mode>       Split mode: none, h-split, v-split (default: none)
@@ -937,7 +905,7 @@ Options:
 Examples:
   node optimize.js mybook.epub
   node optimize.js *.epub -o ~/calibre-library/optimized/
-  node optimize.js ~/downloads/ -o ~/calibre-library/ -q 80 --no-grayscale
+  node optimize.js ~/downloads/ -o ~/calibre-library/ --normalize --contrast 1.2
   node optimize.js book.epub -o . --suffix ""
 `);
 }
