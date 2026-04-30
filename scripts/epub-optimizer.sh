@@ -11,7 +11,8 @@ source "$(dirname "$0")/load-env.sh"
 
 OUTPUT_DIR="$EPUB_OUTPUT_DIR"
 LOG_FILE="$OPTIMIZER_LOG_FILE"
-# BOOKDROP_DIR, CALIBRE_WATCH_FOLDER, OPTIMIZER_SCRIPT, POLL_INTERVAL, KEEP_DAYS come from load-env.sh
+# BOOKDROP_DIR, CALIBRE_WATCH_FOLDER, OPTIMIZER_PYTHON, OPTIMIZER_SCRIPT,
+# POLL_INTERVAL, KEEP_DAYS come from load-env.sh
 
 # Subdirs inside bookdrop for processed/failed tracking
 PROCESSING_DIR="$BOOKDROP_DIR/processing"
@@ -66,12 +67,19 @@ while true; do
 
     log "Processing: $filename"
 
-    # Run the optimizer
-    # Optional env vars: EPUB_NORMALIZE=1, EPUB_CONTRAST=1.3
-    node "$OPTIMIZER_SCRIPT" -o "$OUTPUT_DIR" \
-      ${EPUB_NORMALIZE:+--normalize} \
-      ${EPUB_CONTRAST:+--contrast "$EPUB_CONTRAST"} \
-      "$staging" >> "$LOG_FILE" 2>&1
+    optimizer_args=(-o "$OUTPUT_DIR")
+    [ -n "$EPUB_QUALITY" ] && optimizer_args+=("--quality" "$EPUB_QUALITY")
+    [ -n "$EPUB_MAX_WIDTH" ] && optimizer_args+=("--max-width" "$EPUB_MAX_WIDTH")
+    [ -n "$EPUB_MAX_HEIGHT" ] && optimizer_args+=("--max-height" "$EPUB_MAX_HEIGHT")
+    [ -n "$EPUB_CONTRAST" ] && optimizer_args+=("--contrast" "$EPUB_CONTRAST")
+    [ -n "$EPUB_NO_GRAYSCALE" ] && optimizer_args+=("--no-grayscale")
+    [ -n "$EPUB_NO_CONTRAST" ] && optimizer_args+=("--no-contrast")
+    [ -n "$EPUB_NO_REMOVE_FONTS" ] && optimizer_args+=("--no-remove-fonts")
+    [ -n "$EPUB_NO_REMOVE_CSS" ] && optimizer_args+=("--no-remove-css")
+    [ -n "$EPUB_LIGHT_NOVEL" ] && optimizer_args+=("--light-novel")
+    [ -n "$EPUB_SUFFIX" ] && optimizer_args+=("--suffix=$EPUB_SUFFIX")
+
+    "$OPTIMIZER_PYTHON" "$OPTIMIZER_SCRIPT" "${optimizer_args[@]}" "$staging" >> "$LOG_FILE" 2>&1
     exit_code=$?
 
     if [ $exit_code -eq 0 ]; then

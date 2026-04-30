@@ -5,7 +5,8 @@
 #
 # Prerequisites:
 #   - epub-watcher.service must already be installed (run install-epub-watcher.sh first)
-#   - Node.js must be available (check with: node --version)
+#   - Python 3 must be available
+#   - Python dependencies must be installed from requirements.txt
 
 set -e
 
@@ -20,18 +21,16 @@ CONFIG_FILE="$CONFIG_DIR/.env"
 
 echo "=== epub-optimizer installer ==="
 
-# 1. Check for Node.js
-if ! command -v node &>/dev/null; then
-  echo "[ERROR] Node.js not found. Install it first:"
-  echo "  curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -"
-  echo "  sudo apt-get install -y nodejs"
+# 1. Check for Python
+if ! command -v python3 &>/dev/null; then
+  echo "[ERROR] Python 3 not found. Install it first."
   exit 1
 else
-  echo "[1/5] Node.js found: $(node --version) ✓"
+  echo "[1/6] Python found: $(python3 --version) ✓"
 fi
 
 # 2. Set up configuration
-echo "[2/5] Setting up configuration"
+echo "[2/6] Setting up configuration"
 mkdir -p "$CONFIG_DIR"
 if [ ! -f "$CONFIG_FILE" ]; then
   cp "../.env.example" "$CONFIG_FILE"
@@ -47,24 +46,35 @@ fi
 # shellcheck source=/dev/null
 source "$LOAD_ENV_SRC"
 
-# 3. Install scripts
-echo "[3/5] Installing scripts to $HOME/.local/bin"
+# 3. Check Python dependencies
+echo "[3/6] Checking Python dependencies"
+if ! "$OPTIMIZER_PYTHON" -c "import lxml, PIL, cssutils" &>/dev/null; then
+  echo "[ERROR] Missing Python dependencies."
+  echo "Install them with:"
+  echo "  $OPTIMIZER_PYTHON -m pip install -r ../requirements.txt"
+  exit 1
+else
+  echo "      Dependencies found. ✓"
+fi
+
+# 4. Install scripts
+echo "[4/6] Installing scripts to $HOME/.local/bin"
 mkdir -p "$HOME/.local/bin"
 cp "$LOAD_ENV_SRC" "$LOAD_ENV_DEST"
 cp "$SCRIPT_SRC" "$SCRIPT_DEST"
 chmod +x "$LOAD_ENV_DEST" "$SCRIPT_DEST"
 echo "      Done. ✓"
 
-# 4. Create bookdrop folder structure
-echo "[4/5] Creating bookdrop folder structure: $BOOKDROP_DIR"
+# 5. Create bookdrop folder structure
+echo "[5/6] Creating bookdrop folder structure: $BOOKDROP_DIR"
 mkdir -p "$BOOKDROP_DIR"
 mkdir -p "$BOOKDROP_DIR/processing"
 mkdir -p "$BOOKDROP_DIR/processed"
 mkdir -p "$BOOKDROP_DIR/failed"
 echo "      Done. ✓"
 
-# 5. Install and start systemd user service
-echo "[5/5] Installing systemd user service"
+# 6. Install and start systemd user service
+echo "[6/6] Installing systemd user service"
 mkdir -p "$HOME/.config/systemd/user"
 cp "$SERVICE_SRC" "$SERVICE_DEST"
 systemctl --user daemon-reload
