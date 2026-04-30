@@ -114,16 +114,14 @@ Edit `~/.config/epub-optimizer/.env`:
 
 ### 2. Install
 
-Run the installers from the `scripts/` directory. Install the watcher first! `epub-optimizer.service` has `After=epub-watcher.service` in its unit file, so systemd expects the watcher unit to exist before the optimizer is registered.
+Install the watcher first. `epub-optimizer.service` has `After=epub-watcher.service` in its unit file, so systemd expects the watcher unit to exist before the optimizer is registered.
 
 ```bash
-cd scripts
-
 # Step 1: watcher (moves optimized files to their final destination)
-./install-epub-watcher.sh
+./scripts/install-epub-watcher.sh
 
 # Step 2: optimizer (polls bookdrop, runs optimize.py)
-./install-epub-optimizer.sh
+./scripts/install-epub-optimizer.sh
 ```
 
 Each installer will:

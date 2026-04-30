@@ -34,6 +34,11 @@ log "  Watching:  $BOOKDROP_DIR"
 log "  Output:    $OUTPUT_DIR"
 log "  Poll interval: ${POLL_INTERVAL}s"
 
+if [ -z "$OPTIMIZER_SCRIPT" ]; then
+  log "ERROR: OPTIMIZER_SCRIPT is not set. Add the absolute path to cli/optimize.py in ~/.config/epub-optimizer/.env"
+  exit 1
+fi
+
 # --- Main loop ---
 while true; do
   # Find .epub files directly in bookdrop (not in subdirs like processing/processed/failed)

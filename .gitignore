@@ -146,3 +146,37 @@ vite.config.ts.timestamp-*
 # Project input and output folders
 input/
 optimized/
+.venv/
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python packaging
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+
+# Python virtual environments
+venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Repo-specific Python CLI input/output
+cli/input/
+cli/optimized/

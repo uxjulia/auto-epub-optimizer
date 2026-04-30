@@ -1,6 +1,5 @@
 [Unit]
 Description=EPUB Bookdrop Optimizer
-Documentation=Polls BOOKDROP_DIR for .epub files and runs the optimizer
 After=network.target
 # Start after the output watcher so the pipeline is fully ready
 After=epub-watcher.service
