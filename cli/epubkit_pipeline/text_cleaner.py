@@ -98,6 +98,12 @@ MOJIBAKE_PATTERNS = {
 
 # Tags whose text content should not be modified
 SKIP_TAGS = frozenset({'script', 'style', 'pre', 'code', 'kbd', 'samp'})
+HORIZONTAL_WHITESPACE = frozenset({' ', '\t', '\u00a0'})
+
+
+def _is_horizontal_whitespace_only(text: str) -> bool:
+    """Return True for text nodes that are intentionally just horizontal space."""
+    return bool(text) and all(ch in HORIZONTAL_WHITESPACE for ch in text)
 
 
 def _fix_whitespace(text: str) -> tuple[str, int]:
@@ -194,7 +200,10 @@ def clean_text_content(xhtml_bytes: bytes, options: TextCleanOptions = None) -> 
     def _process_text(text: str) -> str:
         """Apply all enabled text fixes to a string."""
         nonlocal report
-        original = text
+
+        # Preserve intentionally spaced-out text nodes, such as redaction spans.
+        if _is_horizontal_whitespace_only(text):
+            return text
 
         if options.fix_whitespace:
             text, n = _fix_whitespace(text)

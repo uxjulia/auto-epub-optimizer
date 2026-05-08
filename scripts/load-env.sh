@@ -20,6 +20,7 @@ unset _env_file
 
 # --- Defaults (used if a variable is not set in .env) ---
 BOOKDROP_DIR="${BOOKDROP_DIR:-$HOME/bookdrop}"
+OPTIMIZE_ONLY_DIR="${OPTIMIZE_ONLY_DIR:-}"
 # No default — leave unset if not configured so the optimizer skips the Calibre copy step
 CALIBRE_WATCH_FOLDER="${CALIBRE_WATCH_FOLDER:-}"
 EPUB_OUTPUT_DIR="${EPUB_OUTPUT_DIR:-$HOME/epub-optimizer/cli/optimized}"

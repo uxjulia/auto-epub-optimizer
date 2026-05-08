@@ -22,6 +22,7 @@ FONT_MEDIA_TYPES = {
     'application/vnd.ms-opentype', 'application/x-font-ttf',
     'application/x-font-otf', 'application/font-sfnt',
 }
+HORIZONTAL_WHITESPACE = frozenset({' ', '\t', '\u00a0'})
 
 
 def repair_html(html_bytes: bytes) -> bytes:
@@ -191,6 +192,22 @@ def is_font_media_type(media_type: str) -> bool:
     return media_type.lower() in FONT_MEDIA_TYPES
 
 
+def _has_text_content(text: Optional[str]) -> bool:
+    """
+    Treat visible text as content, and also preserve pure horizontal whitespace.
+
+    This keeps markup like <span>          </span> intact while still allowing
+    newline-only formatting whitespace to count as empty.
+    """
+    if not text:
+        return False
+
+    if text.strip():
+        return True
+
+    return all(ch in HORIZONTAL_WHITESPACE for ch in text)
+
+
 def normalize_whitespace(xhtml_bytes: bytes) -> tuple[bytes, int]:
     """
     Strip excessive blank paragraphs and empty divs from XHTML content.
@@ -213,12 +230,11 @@ def normalize_whitespace(xhtml_bytes: bytes) -> tuple[bytes, int]:
         tag = el.tag.split('}')[-1] if '}' in str(el.tag) else str(el.tag)
 
         if tag in ('p', 'div'):
-            text_content = (el.text or '').strip()
+            has_text_content = _has_text_content(el.text)
             has_children = len(el) > 0
 
-            # Check if truly empty (no text, no meaningful children)
-            if not text_content and not has_children:
-                tail = (el.tail or '').strip()
+            # Check if truly empty (no direct text, no child elements)
+            if not has_text_content and not has_children:
                 empty_streak.append(el)
             else:
                 # Reset streak, remove excess empties (keep max 1)

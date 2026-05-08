@@ -19,6 +19,7 @@ I have two e-readers: a Kindle Colorsoft and an XTEINK X4. I wanted a single dro
 - Drop an `.epub` into one folder and have it appear in two separately managed libraries automatically
 - The original is copied to your Calibre watch folder and handled from there as normal
 - A grayscale-optimized copy is written to a separate X4 library, ready to serve via OPDS
+- Optional second drop folder supported for "optimize only" runs that skip the Calibre copy
 - Single-library mode also supported: leave `CALIBRE_WATCH_FOLDER` unset and only the optimized copy is produced
 - Uses the full `epubkit` cleanup pipeline, not only image conversion
 
@@ -96,6 +97,7 @@ Edit `~/.config/epub-optimizer/.env`:
 | Variable               | Description                                                                                                                        |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `BOOKDROP_DIR`         | Drop `.epub` files here to trigger processing                                                                                      |
+| `OPTIMIZE_ONLY_DIR`    | Optional second drop folder; files placed here skip the Calibre copy step and only go through optimization                        |
 | `CALIBRE_WATCH_FOLDER` | Optional - Calibre watch folder; files are copied here before optimization (for use when you want a separate workflow for Calibre) |
 | `OPTIMIZER_PYTHON`     | Python executable used to run the optimizer, e.g. `python3` or a virtualenv path                                                   |
 | `OPTIMIZER_SCRIPT`     | Absolute path to `cli/optimize.py` in this repo                                                                                    |
@@ -133,9 +135,11 @@ Each installer will:
 
 ### 3. Use
 
-Drop any `.epub` file into your `BOOKDROP_DIR`. The optimizer picks it up within `POLL_INTERVAL` seconds, processes it, and the watcher moves the result to `WATCHER_DEST_DIR`.
+Drop any `.epub` file into your `BOOKDROP_DIR`. The optimizer picks it up within `POLL_INTERVAL` seconds, copies the original to Calibre if configured, processes it, and the watcher moves the result to `WATCHER_DEST_DIR`.
 
-Inside `BOOKDROP_DIR` you'll find three subfolders that track state:
+If you set `OPTIMIZE_ONLY_DIR`, files dropped there go through the same optimization flow but skip the Calibre copy entirely. This is useful for books that are already in your Calibre library and only need an optimized X4 copy.
+
+Inside each configured drop folder you'll find three subfolders that track state:
 
 | Subfolder     | Meaning                                                |
 | ------------- | ------------------------------------------------------ |

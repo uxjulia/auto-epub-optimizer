@@ -74,6 +74,13 @@ mkdir -p "$BOOKDROP_DIR"
 mkdir -p "$BOOKDROP_DIR/processing"
 mkdir -p "$BOOKDROP_DIR/processed"
 mkdir -p "$BOOKDROP_DIR/failed"
+if [ -n "$OPTIMIZE_ONLY_DIR" ] && [ "$OPTIMIZE_ONLY_DIR" != "$BOOKDROP_DIR" ]; then
+  echo "      Creating optimize-only folder structure: $OPTIMIZE_ONLY_DIR"
+  mkdir -p "$OPTIMIZE_ONLY_DIR"
+  mkdir -p "$OPTIMIZE_ONLY_DIR/processing"
+  mkdir -p "$OPTIMIZE_ONLY_DIR/processed"
+  mkdir -p "$OPTIMIZE_ONLY_DIR/failed"
+fi
 echo "      Done. ✓"
 
 # 6. Install and start systemd user service
@@ -93,6 +100,9 @@ echo "=== Installation complete! ==="
 echo ""
 echo "Full pipeline:"
 echo "  $BOOKDROP_DIR  →[optimizer]→  $EPUB_OUTPUT_DIR  →[watcher]→  $WATCHER_DEST_DIR"
+if [ -n "$OPTIMIZE_ONLY_DIR" ] && [ "$OPTIMIZE_ONLY_DIR" != "$BOOKDROP_DIR" ]; then
+  echo "  $OPTIMIZE_ONLY_DIR  →[optimizer only, no Calibre copy]→  $EPUB_OUTPUT_DIR  →[watcher]→  $WATCHER_DEST_DIR"
+fi
 echo ""
 echo "Bookdrop subfolders:"
 echo "  processing/  — file is currently being optimized"

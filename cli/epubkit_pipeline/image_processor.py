@@ -68,6 +68,22 @@ def is_progressive_jpeg(image_bytes: bytes) -> bool:
         return False
 
 
+def _encode_jpeg_bytes(img: Image.Image, quality: int, grayscale: bool) -> bytes:
+    """Encode an image as baseline JPEG bytes with the pipeline defaults."""
+    buffer = io.BytesIO()
+    img.save(
+        buffer,
+        format='JPEG',
+        quality=quality,
+        progressive=False,
+        optimize=True,
+        # 4:2:0 for grayscale (all 3 channels identical, saves ~15-20%)
+        # 4:4:4 for color images
+        subsampling=2 if grayscale else 0
+    )
+    return buffer.getvalue()
+
+
 def _quantize_to_4_levels(img: Image.Image) -> Image.Image:
     """
     Quantize grayscale image to 4 e-ink levels with Floyd-Steinberg dithering.
@@ -144,6 +160,7 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
     original_size = len(image_bytes)
     original_ext = Path(filename).suffix.lower()
     stem = Path(filename).stem
+    original_is_safe_jpeg = original_ext in {'.jpg', '.jpeg'} and not is_progressive_jpeg(image_bytes)
 
     try:
         img = Image.open(io.BytesIO(image_bytes))
@@ -185,6 +202,7 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
     results = []
     for i, current_img in enumerate(images):
         details_parts = []
+        resized_for_device = False
 
         # Track format conversion
         if original_ext != '.jpg' and original_ext != '.jpeg':
@@ -199,6 +217,7 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
             clamped_w, clamped_h = current_img.size
             details_parts.append(f"clamped {orig_w}x{orig_h}→{clamped_w}x{clamped_h}")
             orig_w, orig_h = clamped_w, clamped_h
+            resized_for_device = True
 
         # Resize to fit X4 screen
         if orig_w > options.max_width or orig_h > options.max_height:
@@ -206,6 +225,7 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
                                   Image.Resampling.LANCZOS)
             new_w, new_h = current_img.size
             details_parts.append(f"resized {orig_w}x{orig_h}→{new_w}x{new_h}")
+            resized_for_device = True
 
         # Convert to grayscale
         if options.grayscale:
@@ -239,18 +259,38 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
             details_parts.append(f"contrast {options.contrast_factor}x")
 
         # Save as baseline JPEG
-        buffer = io.BytesIO()
-        current_img.save(
-            buffer,
-            format='JPEG',
-            quality=options.quality,
-            progressive=False,
-            optimize=True,
-            # 4:2:0 for grayscale (all 3 channels identical, saves ~15-20%)
-            # 4:4:4 for color images
-            subsampling=2 if options.grayscale else 0
-        )
-        output_bytes = buffer.getvalue()
+        chosen_quality = options.quality
+        output_bytes = _encode_jpeg_bytes(current_img, chosen_quality, options.grayscale)
+
+        # If a safe source JPEG had to be resized, try lower qualities before
+        # accepting a result that's larger than the original.
+        if original_is_safe_jpeg and resized_for_device and len(output_bytes) > original_size:
+            best_quality = chosen_quality
+            best_output = output_bytes
+            for trial_quality in range(max(40, chosen_quality - 5), 34, -5):
+                trial_bytes = _encode_jpeg_bytes(current_img, trial_quality, options.grayscale)
+                if len(trial_bytes) < len(best_output):
+                    best_quality = trial_quality
+                    best_output = trial_bytes
+                if len(trial_bytes) <= original_size:
+                    break
+            if best_quality != chosen_quality:
+                details_parts.append(f"quality {chosen_quality}→{best_quality}")
+                chosen_quality = best_quality
+                output_bytes = best_output
+
+        # If the original image is already a non-progressive JPEG and did not need
+        # resizing for device constraints, keep it when re-encoding makes it bigger.
+        if len(images) == 1 and original_is_safe_jpeg and not resized_for_device and len(output_bytes) > original_size:
+            results.append(ImageResult(
+                output_bytes=image_bytes,
+                new_filename=filename,
+                original_size=original_size,
+                new_size=original_size,
+                was_converted=False,
+                details="kept original JPEG (optimized version was larger)"
+            ))
+            continue
 
         # Build filename
         if len(images) > 1:
