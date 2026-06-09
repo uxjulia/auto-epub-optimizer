@@ -61,6 +61,27 @@ docker compose logs -f epub-watcher
 docker compose down
 ```
 
+### Apply changes
+
+If you change Python code, shell scripts, Dockerfiles, or `docker-compose.yml`, rebuild and recreate the containers:
+
+```bash
+docker compose up -d --build
+```
+
+If you only change `.env`, re-apply the Compose config:
+
+```bash
+docker compose up -d
+```
+
+If you want a completely fresh restart:
+
+```bash
+docker compose down
+docker compose up -d --build
+```
+
 ## Systemd Automated Watcher (Linux / WSL2)
 
 The `scripts/` folder contains two systemd user services that build a fully automated pipeline:
@@ -153,6 +174,29 @@ systemctl --user restart epub-optimizer epub-watcher
 # Stop
 systemctl --user stop epub-optimizer epub-watcher
 ```
+
+### Apply changes
+
+What you need to do depends on what changed:
+
+- If you changed `cli/optimize.py` or files in `cli/epubkit_pipeline/`, restart the services so they pick up the updated repo code.
+- If you changed `~/.config/epub-optimizer/.env`, restart the services so they reload the config.
+- If you changed files in `scripts/` such as `epub-optimizer.sh`, `epub-watcher.sh`, `load-env.sh`, or either `.service` file, re-run the installers so the copies in `~/.local/bin/` and `~/.config/systemd/user/` are updated.
+
+For code or config changes only:
+
+```bash
+systemctl --user restart epub-optimizer epub-watcher
+```
+
+For script or service-unit changes:
+
+```bash
+./scripts/install-epub-watcher.sh
+./scripts/install-epub-optimizer.sh
+```
+
+Those installer scripts will copy the updated files, run `systemctl --user daemon-reload`, and restart the services for you.
 
 ---
 

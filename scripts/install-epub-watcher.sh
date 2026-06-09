@@ -63,7 +63,7 @@ mkdir -p "$HOME/.config/systemd/user"
 cp "$SERVICE_SRC" "$SERVICE_DEST"
 systemctl --user daemon-reload
 systemctl --user enable epub-watcher.service
-systemctl --user start epub-watcher.service
+systemctl --user restart epub-watcher.service
 echo "      Done. ✓"
 
 # 6. Status check

@@ -89,7 +89,7 @@ mkdir -p "$HOME/.config/systemd/user"
 cp "$SERVICE_SRC" "$SERVICE_DEST"
 systemctl --user daemon-reload
 systemctl --user enable epub-optimizer.service
-systemctl --user start epub-optimizer.service
+systemctl --user restart epub-optimizer.service
 echo "      Done. ✓"
 
 echo ""
