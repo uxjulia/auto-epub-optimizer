@@ -76,6 +76,7 @@ process_drop_dir() {
     [ -n "$EPUB_NO_REMOVE_FONTS" ] && optimizer_args+=("--no-remove-fonts")
     [ -n "$EPUB_NO_REMOVE_CSS" ] && optimizer_args+=("--no-remove-css")
     [ -n "$EPUB_LIGHT_NOVEL" ] && optimizer_args+=("--light-novel")
+    [ -n "$EPUB_FILENAME_FORMAT" ] && optimizer_args+=("--filename-format" "$EPUB_FILENAME_FORMAT")
     [ -n "$EPUB_SUFFIX" ] && optimizer_args+=("--suffix=$EPUB_SUFFIX")
 
     "$OPTIMIZER_PYTHON" "$OPTIMIZER_SCRIPT" "${optimizer_args[@]}" "$staging" >> "$LOG_FILE" 2>&1

@@ -133,6 +133,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-clean-metadata", dest="clean_metadata", action="store_false", help="keep store-specific metadata")
     parser.add_argument("--no-text-cleanup", dest="text_cleanup", action="store_false", help="disable text cleanup")
     parser.add_argument("--keep-quotes", dest="normalize_quotes", action="store_false", help="do not normalize smart quotes")
+    parser.add_argument(
+        "--filename-format",
+        choices=("author-title", "title-author", "title"),
+        default="author-title",
+        help="output filename format derived from EPUB metadata",
+    )
     parser.add_argument("--suffix", default="", help="suffix to append before .epub")
     parser.add_argument("-v", "--verbose", action="store_true", help="print progress and detailed summary")
     parser.add_argument(
@@ -172,6 +178,7 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         clean_metadata=args.clean_metadata,
         text_cleanup=args.text_cleanup,
         normalize_quotes=args.normalize_quotes,
+        filename_format=args.filename_format,
     )
 
 

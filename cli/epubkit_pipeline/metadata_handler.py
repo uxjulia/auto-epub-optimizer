@@ -273,15 +273,23 @@ def strip_store_metadata(opf_tree: etree._ElementTree) -> int:
     return removed
 
 
-def format_filename(title: str, author: str) -> str:
+def format_filename(title: str, author: str, filename_format: str = 'author-title') -> str:
     """
-    Create a sanitized filename in 'Author - Title.epub' format.
-    Falls back gracefully if either field is missing.
+    Create a sanitized filename using the requested metadata order.
+    Supported formats:
+      - author-title: Author - Title.epub
+      - title-author: Title - Author.epub
+      - title: Title.epub
+    Falls back gracefully if metadata is missing.
     """
     title = (title or '').strip()
     author = (author or '').strip()
 
-    if author and title:
+    if filename_format == 'title-author' and title and author:
+        name = f"{title} - {author}"
+    elif filename_format == 'title' and title:
+        name = title
+    elif author and title:
         name = f"{author} - {title}"
     elif title:
         name = title

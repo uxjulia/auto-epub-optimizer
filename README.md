@@ -1,4 +1,4 @@
-# Automated EPUB Optimizer Workflow
+# <div align="center">Automated EPUB Optimizer Workflow</div>
 
 **<div align="center">Drop EPUB into folder → Automatically gets optimized → File is moved to your library</div>**<br/>
 
@@ -101,6 +101,7 @@ Edit `~/.config/epub-optimizer/.env`:
 | `EPUB_MAX_HEIGHT`      | Optional max image height, default `480`                                                                                           |
 | `EPUB_CONTRAST`        | Optional contrast multiplier, default `1.5`                                                                                        |
 | `EPUB_LIGHT_NOVEL`     | Optional - set to `1` to rotate/split landscape light-novel images                                                                 |
+| `EPUB_FILENAME_FORMAT` | Optional output name pattern: `author-title`, `title-author`, or `title`                                                           |
 | `EPUB_SUFFIX`          | Optional suffix appended before `.epub`, e.g. `-optimized`                                                                         |
 
 ### 2. Install
@@ -190,25 +191,26 @@ The output filename may be normalized from the EPUB's internal metadata or title
 
 ### Options
 
-| Flag                   | Default       | Description                               |
-| ---------------------- | ------------- | ----------------------------------------- |
-| `-o, --output <dir>`   | `./optimized` | Output directory                          |
-| `-q, --quality <n>`    | `70`          | JPEG quality (1-100)                      |
-| `--no-grayscale`       | -             | Disable grayscale conversion              |
-| `--no-contrast`        | -             | Disable contrast boost                    |
-| `--contrast <n>`       | `1.5`         | Contrast multiplier for images            |
-| `--no-eink-quantize`   | -             | Disable 4-level e-ink quantization        |
-| `-W, --max-width <n>`  | `800`         | Max image width in px                     |
-| `-H, --max-height <n>` | `480`         | Max image height in px                    |
-| `--light-novel`        | -             | Rotate/split landscape light-novel images |
-| `--no-remove-fonts`    | -             | Keep embedded fonts                       |
-| `--no-remove-css`      | -             | Keep unused CSS                           |
-| `--no-generate-cover`  | -             | Do not generate missing cover art         |
-| `--no-clean-metadata`  | -             | Keep store-specific metadata              |
-| `--no-text-cleanup`    | -             | Disable text cleanup                      |
-| `--suffix <str>`       | empty         | Suffix appended to output filename        |
-| `-v, --verbose`        | -             | Print progress and summary details        |
-| `--help`               | -             | Show help                                 |
+| Flag                   | Default        | Description                               |
+| ---------------------- | -------------- | ----------------------------------------- |
+| `-o, --output <dir>`   | `./optimized`  | Output directory                          |
+| `-q, --quality <n>`    | `70`           | JPEG quality (1-100)                      |
+| `--no-grayscale`       | -              | Disable grayscale conversion              |
+| `--no-contrast`        | -              | Disable contrast boost                    |
+| `--contrast <n>`       | `1.5`          | Contrast multiplier for images            |
+| `--no-eink-quantize`   | -              | Disable 4-level e-ink quantization        |
+| `-W, --max-width <n>`  | `800`          | Max image width in px                     |
+| `-H, --max-height <n>` | `480`          | Max image height in px                    |
+| `--light-novel`        | -              | Rotate/split landscape light-novel images |
+| `--no-remove-fonts`    | -              | Keep embedded fonts                       |
+| `--no-remove-css`      | -              | Keep unused CSS                           |
+| `--no-generate-cover`  | -              | Do not generate missing cover art         |
+| `--no-clean-metadata`  | -              | Keep store-specific metadata              |
+| `--no-text-cleanup`    | -              | Disable text cleanup                      |
+| `--filename-format`    | `author-title` | Output filename pattern from metadata     |
+| `--suffix <str>`       | empty          | Suffix appended to output filename        |
+| `-v, --verbose`        | -              | Print progress and summary details        |
+| `--help`               | -              | Show help                                 |
 
 ### Pipeline
 
@@ -225,6 +227,9 @@ python3 cli/optimize.py -q 80 -W 600 -H 900 --output ./out book.epub
 
 # Keep the old filename suffix convention
 python3 cli/optimize.py --suffix=-optimized book.epub
+
+# Name outputs as "Title - Author"
+python3 cli/optimize.py --filename-format=title-author book.epub
 
 # Faster cleanup that keeps CSS and embedded fonts
 python3 cli/optimize.py --no-remove-css --no-remove-fonts book.epub

@@ -8,6 +8,7 @@ PIPELINE_DIR = PROJECT_ROOT / 'cli' / 'epubkit_pipeline'
 sys.path.insert(0, str(PIPELINE_DIR))
 
 from html_cleaner import normalize_whitespace  # noqa: E402
+from metadata_handler import format_filename  # noqa: E402
 from text_cleaner import TextCleanOptions, clean_text_content  # noqa: E402
 
 
@@ -44,6 +45,24 @@ class WhitespacePreservationTests(unittest.TestCase):
 
         self.assertIn(b'Hello world', cleaned)
         self.assertGreater(report.double_spaces_fixed, 0)
+
+    def test_format_filename_defaults_to_author_then_title(self):
+        self.assertEqual(
+            format_filename("My Book", "Jane Doe"),
+            "Jane Doe - My Book.epub",
+        )
+
+    def test_format_filename_can_put_title_first(self):
+        self.assertEqual(
+            format_filename("My Book", "Jane Doe", "title-author"),
+            "My Book - Jane Doe.epub",
+        )
+
+    def test_format_filename_can_use_title_only(self):
+        self.assertEqual(
+            format_filename("My Book", "Jane Doe", "title"),
+            "My Book.epub",
+        )
 
 
 if __name__ == '__main__':
