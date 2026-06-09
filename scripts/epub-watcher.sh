@@ -34,6 +34,14 @@ while read -r filename; do
   src="$WATCH_DIR/$filename"
   dst="$DEST_DIR/$filename"
 
+  # Ignore hidden temp files and non-EPUB artifacts; the optimizer writes
+  # a hidden staging file before atomically renaming the finished book.
+  case "$filename" in
+    .* ) continue ;;
+    *.epub ) ;;
+    * ) continue ;;
+  esac
+
   # Skip if it's not a regular file (e.g. temp files)
   [ -f "$src" ] || continue
 

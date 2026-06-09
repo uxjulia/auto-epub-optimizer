@@ -5,11 +5,14 @@
 
 set -e
 
-SCRIPT_SRC="./epub-watcher.sh"
-LOAD_ENV_SRC="./load-env.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+SCRIPT_SRC="$SCRIPT_DIR/epub-watcher.sh"
+LOAD_ENV_SRC="$SCRIPT_DIR/load-env.sh"
 SCRIPT_DEST="$HOME/.local/bin/epub-watcher.sh"
 LOAD_ENV_DEST="$HOME/.local/bin/load-env.sh"
-SERVICE_SRC="./epub-watcher.service"
+SERVICE_SRC="$SCRIPT_DIR/epub-watcher.service"
 SERVICE_DEST="$HOME/.config/systemd/user/epub-watcher.service"
 CONFIG_DIR="$HOME/.config/epub-optimizer"
 CONFIG_FILE="$CONFIG_DIR/.env"
@@ -28,7 +31,7 @@ fi
 echo "[2/6] Setting up configuration"
 mkdir -p "$CONFIG_DIR"
 if [ ! -f "$CONFIG_FILE" ]; then
-  cp "../.env.example" "$CONFIG_FILE"
+  cp "$REPO_ROOT/.env.example" "$CONFIG_FILE"
   echo "      Created $CONFIG_FILE from .env.example"
   echo "      *** Edit $CONFIG_FILE before continuing! ***"
   echo "      Then re-run this installer."

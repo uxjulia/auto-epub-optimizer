@@ -1,6 +1,5 @@
 [Unit]
 Description=EPUB Optimizer Output Watcher
-Documentation=Watches EPUB_OUTPUT_DIR and moves finished files to WATCHER_DEST_DIR
 After=network.target
 
 [Service]

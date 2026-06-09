@@ -13,17 +13,21 @@ if [ -f "$_env_file" ]; then
   source "$_env_file"
   set +a
 else
-  echo "[load-env] WARNING: Config not found at $_env_file" >&2
-  echo "[load-env] Copy .env.example to $_env_file and customize it." >&2
+  if [ -z "${EPUB_OPTIMIZER_SUPPRESS_CONFIG_WARNING:-}" ]; then
+    echo "[load-env] WARNING: Config not found at $_env_file" >&2
+    echo "[load-env] Copy .env.example to $_env_file and customize it." >&2
+  fi
 fi
 unset _env_file
 
 # --- Defaults (used if a variable is not set in .env) ---
 BOOKDROP_DIR="${BOOKDROP_DIR:-$HOME/bookdrop}"
+OPTIMIZE_ONLY_DIR="${OPTIMIZE_ONLY_DIR:-}"
 # No default — leave unset if not configured so the optimizer skips the Calibre copy step
 CALIBRE_WATCH_FOLDER="${CALIBRE_WATCH_FOLDER:-}"
 EPUB_OUTPUT_DIR="${EPUB_OUTPUT_DIR:-$HOME/epub-optimizer/cli/optimized}"
-OPTIMIZER_SCRIPT="${OPTIMIZER_SCRIPT:-$HOME/epub-optimizer/cli/optimize.js}"
+OPTIMIZER_PYTHON="${OPTIMIZER_PYTHON:-python3}"
+OPTIMIZER_SCRIPT="${OPTIMIZER_SCRIPT:-}"
 WATCHER_DEST_DIR="${WATCHER_DEST_DIR:-$HOME/x4-library}"
 OPTIMIZER_LOG_FILE="${OPTIMIZER_LOG_FILE:-$HOME/.local/log/epub-optimizer.log}"
 WATCHER_LOG_FILE="${WATCHER_LOG_FILE:-$HOME/.local/log/epub-watcher.log}"

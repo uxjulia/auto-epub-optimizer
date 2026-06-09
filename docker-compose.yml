@@ -18,6 +18,7 @@ services:
       dockerfile: Dockerfile.watcher
     restart: unless-stopped
     environment:
+      EPUB_OPTIMIZER_SUPPRESS_CONFIG_WARNING: "1"
       EPUB_OUTPUT_DIR: /output
       WATCHER_DEST_DIR: /destination
       WATCHER_LOG_FILE: /logs/epub-watcher.log
@@ -34,10 +35,12 @@ services:
     depends_on:
       - epub-watcher
     environment:
+      EPUB_OPTIMIZER_SUPPRESS_CONFIG_WARNING: "1"
       BOOKDROP_DIR: /bookdrop
       EPUB_OUTPUT_DIR: /output
       # CALIBRE_WATCH_FOLDER: /calibre  # uncomment if using separate Calibre watch folder and add the volume below
-      OPTIMIZER_SCRIPT: /app/cli/optimize.js
+      OPTIMIZER_PYTHON: python3
+      OPTIMIZER_SCRIPT: /app/cli/optimize.py
       OPTIMIZER_LOG_FILE: /logs/epub-optimizer.log
       POLL_INTERVAL: ${POLL_INTERVAL:-5}
       KEEP_DAYS: ${KEEP_DAYS:-5}
