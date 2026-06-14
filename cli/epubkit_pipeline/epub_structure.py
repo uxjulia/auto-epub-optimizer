@@ -5,6 +5,7 @@ Handles: OPF/NCX/XHTML reference updates, SVG cover fix, TOC repair/regeneration
 
 import os
 import re
+import json
 from pathlib import Path
 from urllib.parse import unquote, quote
 
@@ -27,6 +28,8 @@ NS_SVG = 'http://www.w3.org/2000/svg'
 NS_XLINK = 'http://www.w3.org/1999/xlink'
 NS_NCX = 'http://www.daisy.org/z3986/2005/ncx/'
 NS_EPUB = 'http://www.idpf.org/2007/ops'
+CROSSINK_LOCATION_MANIFEST_PATH = os.path.join('META-INF', 'crossink-locations.json')
+CROSSINK_LOCATION_WORDS_PER_UNIT = 128
 
 
 def _is_element(node):
@@ -50,6 +53,111 @@ def _find_element(root, local_name):
         if tag.endswith('}' + local_name) or tag == local_name:
             return child
     return None
+
+
+def _find_elements(root, local_name):
+    """Find all elements by local name, regardless of namespace."""
+    elements = []
+    for child in root.iter():
+        tag = child.tag if isinstance(child.tag, str) else ''
+        if tag.endswith('}' + local_name) or tag == local_name:
+            elements.append(child)
+    return elements
+
+
+def _extract_visible_text(path: str) -> str:
+    """Extract readable text from XHTML/HTML while ignoring styling and SVG payloads."""
+    parser = etree.XMLParser(recover=True, resolve_entities=False)
+    try:
+        tree = etree.parse(path, parser)
+    except etree.XMLSyntaxError:
+        tree = etree.parse(path, etree.HTMLParser(recover=True))
+
+    root = tree.getroot()
+    for element in list(root.iter()):
+        if not _is_element(element):
+            continue
+        local = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+        if local in {'script', 'style', 'svg', 'metadata'}:
+            parent = element.getparent()
+            if parent is not None:
+                parent.remove(element)
+
+    return ' '.join(root.itertext())
+
+
+def _count_location_words(text: str) -> int:
+    return len(re.findall(r"[\w]+(?:['’-][\w]+)*", text, flags=re.UNICODE))
+
+
+def _spine_hrefs(opf_path: str) -> list[str]:
+    tree = etree.parse(opf_path)
+    root = tree.getroot()
+    manifest = {}
+    for item in _find_elements(root, 'item'):
+        item_id = item.get('id')
+        href = item.get('href')
+        if item_id and href:
+            manifest[item_id] = unquote(href.split('#')[0])
+
+    hrefs = []
+    for itemref in _find_elements(root, 'itemref'):
+        idref = itemref.get('idref')
+        if idref and idref in manifest:
+            hrefs.append(manifest[idref])
+    return hrefs
+
+
+def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> int:
+    """
+    Write META-INF/crossink-locations.json with stable word-based EPUB locations.
+    Returns the generated location count.
+    """
+    opf_dir = Path(opf_path).parent
+    spine = []
+    total_words = 0
+    next_location = 1
+
+    for index, href in enumerate(_spine_hrefs(opf_path)):
+        xhtml_path = opf_dir / href
+        word_count = 0
+        if xhtml_path.exists():
+            word_count = _count_location_words(_extract_visible_text(str(xhtml_path)))
+
+        location_count = (word_count + CROSSINK_LOCATION_WORDS_PER_UNIT - 1) // CROSSINK_LOCATION_WORDS_PER_UNIT
+        start_location = next_location if location_count > 0 else 0
+        end_location = next_location + location_count - 1 if location_count > 0 else 0
+
+        spine.append({
+            'index': index,
+            'href': str(Path(href).as_posix()),
+            'wordStart': total_words,
+            'wordCount': word_count,
+            'startLocation': start_location,
+            'endLocation': end_location,
+        })
+
+        total_words += word_count
+        next_location += location_count
+
+    if not spine:
+        return 0
+
+    manifest = {
+        'format': 'crossink-locations',
+        'version': 1,
+        'generator': 'auto-epub-optimizer-cli',
+        'unit': 'word',
+        'wordsPerLocation': CROSSINK_LOCATION_WORDS_PER_UNIT,
+        'totalWords': total_words,
+        'totalLocations': max(0, next_location - 1),
+        'spine': spine,
+    }
+
+    out_path = Path(epub_dir) / CROSSINK_LOCATION_MANIFEST_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(manifest, separators=(',', ':')), encoding='utf-8')
+    return manifest['totalLocations']
 
 
 def build_rename_map(epub_dir: str, processed_images: dict) -> dict:

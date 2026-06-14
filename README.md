@@ -18,6 +18,7 @@ Use it in three ways:
 - Optional second drop folder supported for "optimize only" runs that skip the Calibre copy
 - Single-library mode also supported: leave `CALIBRE_WATCH_FOLDER` unset and only the optimized copy is produced
 - Uses the full `epubkit` cleanup pipeline, not only image conversion
+- Writes CrossInk word-based location metadata into optimized EPUBs for future stable reading-position support
 
 # Usage
 

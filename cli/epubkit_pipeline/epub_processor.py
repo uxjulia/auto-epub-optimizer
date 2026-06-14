@@ -30,7 +30,8 @@ from epub_packager import (
 from epub_structure import (
     build_rename_map, update_opf, update_opf_remove_fonts,
     update_xhtml_references, update_css_references,
-    fix_svg_covers, fix_toc, find_content_files, add_image_to_opf
+    fix_svg_covers, fix_toc, find_content_files, add_image_to_opf,
+    write_crossink_location_manifest
 )
 
 
@@ -80,6 +81,7 @@ class ProcessingReport:
     text_cleanup_summary: str = ''
     os_artifacts_removed: int = 0
     cover_generated: bool = False
+    crossink_locations: int = 0
     # Details
     image_details: list = field(default_factory=list)
 
@@ -120,6 +122,9 @@ class ProcessingReport:
 
         if self.os_artifacts_removed > 0:
             parts.append(f"Removed {self.os_artifacts_removed} OS artifacts")
+
+        if self.crossink_locations > 0:
+            parts.append(f"Generated {self.crossink_locations} CrossInk locations")
 
         if self.original_size > 0 and self.optimized_size > 0:
             reduction = (1 - self.optimized_size / self.original_size) * 100
@@ -393,6 +398,10 @@ def process_epub(input_path: str, output_path: str,
         _progress(90, "Checking TOC...")
         toc_fixed, toc_msg = fix_toc(work_dir, opf_path)
         report.toc_status = toc_msg
+
+        # Step 18: Generate CrossInk location sidecar (92%)
+        _progress(92, "Generating CrossInk locations...")
+        report.crossink_locations = write_crossink_location_manifest(work_dir, opf_path)
 
         # Step 18: Clean OS artifacts (93%)
         _progress(93, "Cleaning up...")
