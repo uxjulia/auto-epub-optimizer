@@ -23,6 +23,9 @@ FONT_MEDIA_TYPES = {
     'application/x-font-otf', 'application/font-sfnt',
 }
 HORIZONTAL_WHITESPACE = frozenset({' ', '\t', '\u00a0'})
+CSS_FLATTEN_MAX_GROWTH_RATIO = 0.10
+CSS_FLATTEN_MIN_GROWTH_BUDGET = 4096
+CSS_FLATTEN_MAX_GROWTH_BUDGET = 16384
 CROSSINK_FLATTENABLE_CSS_PROPERTIES = frozenset({
     'text-align',
     'font-style',
@@ -413,6 +416,77 @@ def flatten_crossink_css_in_xhtml(xhtml_bytes: bytes, css_plan: dict) -> tuple[b
 
     result = etree.tostring(tree, encoding='unicode', pretty_print=True)
     return result.encode('utf-8'), flattened, removed_links
+
+
+def _estimate_crossink_css_growth_for_tree(tree, css_plan: dict) -> tuple[int, int]:
+    rules = css_plan.get('rules') or []
+    elements = 0
+    added_bytes = 0
+
+    for element in tree.iter():
+        if not isinstance(element.tag, str):
+            continue
+        declarations = []
+        for priority in range(4):
+            for rule in rules:
+                if rule['priority'] == priority and _element_matches_crossink_selector(element, rule['selector']):
+                    declarations.extend(rule['declarations'])
+        if not declarations:
+            continue
+
+        flattened_style = ';'.join(declarations)
+        existing_style = (element.get('style') or '').strip()
+        added_bytes += len(flattened_style) + (1 if existing_style else len(' style=""'))
+        elements += 1
+
+    return elements, added_bytes
+
+
+def assess_crossink_css_flattening(xhtml_payloads: list[bytes], css_plan: dict) -> dict:
+    """Return whether CSS flattening is small enough to avoid XHTML bloat regressions."""
+    original_bytes = sum(len(payload) for payload in xhtml_payloads)
+    growth_budget = min(
+        CSS_FLATTEN_MAX_GROWTH_BUDGET,
+        max(CSS_FLATTEN_MIN_GROWTH_BUDGET, round(original_bytes * CSS_FLATTEN_MAX_GROWTH_RATIO))
+    )
+
+    if not css_plan.get('can_drop_css') or not css_plan.get('rules'):
+        return {
+            'enabled': False,
+            'reason': 'no flattenable rules' if not css_plan.get('rules') else 'unsupported selectors require CSS file',
+            'original_bytes': original_bytes,
+            'added_bytes': 0,
+            'elements': 0,
+            'growth_budget': growth_budget,
+        }
+
+    total_elements = 0
+    total_added_bytes = 0
+    for payload in xhtml_payloads:
+        try:
+            tree = etree.fromstring(payload)
+        except etree.XMLSyntaxError:
+            parser = etree.HTMLParser(recover=True)
+            tree = etree.fromstring(payload, parser)
+            if tree is None:
+                continue
+
+        elements, added_bytes = _estimate_crossink_css_growth_for_tree(tree, css_plan)
+        total_elements += elements
+        total_added_bytes += added_bytes
+        if total_added_bytes > growth_budget:
+            break
+
+    return {
+        'enabled': total_elements > 0 and total_added_bytes <= growth_budget,
+        'reason': 'no matching elements' if total_elements == 0 else (
+            'within budget' if total_added_bytes <= growth_budget else 'growth exceeds budget'
+        ),
+        'original_bytes': original_bytes,
+        'added_bytes': total_added_bytes,
+        'elements': total_elements,
+        'growth_budget': growth_budget,
+    }
 
 
 def _has_text_content(text: Optional[str]) -> bool:

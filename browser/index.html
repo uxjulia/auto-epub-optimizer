@@ -693,6 +693,9 @@
         '<style type="text/css">img,svg{max-width:100%;height:auto}body{overflow-wrap:break-word}table{max-width:100%;table-layout:fixed}pre,code{white-space:pre-wrap;word-wrap:break-word}*{box-sizing:border-box}</style>';
       const CROSSINK_LOCATION_MANIFEST_PATH = "META-INF/crossink-locations.json";
       const CROSSINK_LOCATION_WORDS_PER_UNIT = 128;
+      const CSS_FLATTEN_MAX_GROWTH_RATIO = 0.1;
+      const CSS_FLATTEN_MIN_GROWTH_BUDGET = 4096;
+      const CSS_FLATTEN_MAX_GROWTH_BUDGET = 16384;
       const CROSSINK_FLATTENABLE_CSS_PROPERTIES = new Set([
         "text-align",
         "font-style",
@@ -1186,6 +1189,95 @@
         }
 
         return changed;
+      }
+
+      function estimateCssFlatteningGrowthForDoc(doc, cssRules) {
+        let elements = 0;
+        let addedBytes = 0;
+        for (const element of [...doc.getElementsByTagName("*")]) {
+          const flattened = [];
+          for (let priority = 0; priority <= 3; priority++) {
+            for (const rule of cssRules) {
+              if (
+                rule.priority === priority &&
+                elementMatchesCrossInkSelector(element, rule.selector)
+              )
+                flattened.push(...rule.declarations);
+            }
+          }
+          if (flattened.length === 0) continue;
+
+          const flattenedStyle = flattened.join(";");
+          const existingStyle = (element.getAttribute("style") || "").trim();
+          addedBytes +=
+            flattenedStyle.length +
+            (existingStyle ? 1 : ' style=""'.length);
+          elements++;
+        }
+        return { elements, addedBytes };
+      }
+
+      function assessCssFlatteningImpact(xhtmlFiles, cssPlan) {
+        const originalBytes = Object.values(xhtmlFiles).reduce(
+          (sum, content) => sum + content.length,
+          0,
+        );
+        const growthBudget = Math.min(
+          CSS_FLATTEN_MAX_GROWTH_BUDGET,
+          Math.max(
+            CSS_FLATTEN_MIN_GROWTH_BUDGET,
+            Math.round(originalBytes * CSS_FLATTEN_MAX_GROWTH_RATIO),
+          ),
+        );
+
+        if (!cssPlan.canDropCssFiles || cssPlan.rules.length === 0) {
+          return {
+            enabled: false,
+            reason:
+              cssPlan.rules.length === 0
+                ? "no flattenable rules"
+                : "unsupported selectors require CSS file",
+            originalBytes,
+            addedBytes: 0,
+            elements: 0,
+            growthBudget,
+          };
+        }
+
+        let addedBytes = 0;
+        let elements = 0;
+        for (const content of Object.values(xhtmlFiles)) {
+          try {
+            const doc = new DOMParser().parseFromString(
+              content,
+              "application/xhtml+xml",
+            );
+            if (doc.querySelector("parsererror")) continue;
+            const estimate = estimateCssFlatteningGrowthForDoc(
+              doc,
+              cssPlan.rules,
+            );
+            addedBytes += estimate.addedBytes;
+            elements += estimate.elements;
+            if (addedBytes > growthBudget) break;
+          } catch (e) {
+            /* skip estimate for malformed XHTML */
+          }
+        }
+
+        return {
+          enabled: elements > 0 && addedBytes <= growthBudget,
+          reason:
+            elements === 0
+              ? "no matching elements"
+              : addedBytes <= growthBudget
+                ? "within budget"
+                : "growth exceeds budget",
+          originalBytes,
+          addedBytes,
+          elements,
+          growthBudget,
+        };
       }
 
       function removeStylesheetLinksFromDoc(doc) {
@@ -2233,6 +2325,10 @@
           preparedCssFiles[path] = t;
         }
         const cssFlattenPlan = parseCssRulesForFlattening(preparedCssFiles);
+        const cssFlattenDecision = assessCssFlatteningImpact(
+          xhtmlFiles,
+          cssFlattenPlan,
+        );
         let cssFlattenedElements = 0;
         let cssLinksRemoved = 0;
 
@@ -2385,15 +2481,16 @@
                   }
                 }
               }
-              const flattenedCount = applyCssFlatteningToDoc(
-                doc,
-                cssFlattenPlan.rules,
-              );
-              if (flattenedCount > 0) {
-                cssFlattenedElements += flattenedCount;
-                modified = true;
-              }
-              if (cssFlattenPlan.canDropCssFiles) {
+              if (cssFlattenDecision.enabled) {
+                const flattenedCount = applyCssFlatteningToDoc(
+                  doc,
+                  cssFlattenPlan.rules,
+                );
+                if (flattenedCount > 0) {
+                  cssFlattenedElements += flattenedCount;
+                  modified = true;
+                }
+
                 const removedLinks = removeStylesheetLinksFromDoc(doc);
                 if (removedLinks > 0) {
                   cssLinksRemoved += removedLinks;
@@ -2416,6 +2513,11 @@
         }
         if (cssFlattenedElements > 0)
           logFix("CSS flattened", `${cssFlattenedElements} elements`);
+        else if (cssFlattenPlan.rules.length > 0 && !cssFlattenDecision.enabled)
+          logFix(
+            "CSS flatten skipped",
+            `${cssFlattenDecision.reason} (${cssFlattenDecision.addedBytes}B/${cssFlattenDecision.growthBudget}B)`,
+          );
 
         // OPF identifier
         if (opfContent) mainIdentifier = extractIdentifier(opfContent);
@@ -2429,7 +2531,7 @@
             ? opfPath.substring(0, opfPath.lastIndexOf("/"))
             : "";
           t = fixOPF(t, opfContent, opfDir, splitImages);
-          if (cssFlattenPlan.canDropCssFiles) {
+          if (cssFlattenDecision.enabled) {
             const cssRemoved = removeCssManifestItemsFromOpf(t, t);
             t = cssRemoved.text;
             if (cssRemoved.removed > 0 || cssLinksRemoved > 0) {
@@ -2480,7 +2582,7 @@
             low.endsWith(".opf")
           )
             continue;
-          if (cssFlattenPlan.canDropCssFiles && low.endsWith(".css")) continue;
+          if (cssFlattenDecision.enabled && low.endsWith(".css")) continue;
           let data = await fileObj.async("arraybuffer");
           if (low.endsWith(".css")) {
             data = new TextEncoder().encode(

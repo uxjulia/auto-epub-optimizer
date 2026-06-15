@@ -22,7 +22,8 @@ from html_cleaner import (
     repair_html, remove_unused_css, collect_used_selectors,
     remove_embedded_fonts_from_css, find_font_files, normalize_whitespace,
     add_chapter_page_breaks, strip_unnecessary_attributes,
-    build_crossink_css_plan, flatten_crossink_css_in_xhtml
+    build_crossink_css_plan, flatten_crossink_css_in_xhtml,
+    assess_crossink_css_flattening
 )
 from text_cleaner import clean_text_content, TextCleanOptions, TextCleanReport
 from epub_packager import (
@@ -373,7 +374,14 @@ def process_epub(input_path: str, output_path: str,
                 css_texts.append(f.read())
 
         css_plan = build_crossink_css_plan(css_texts)
-        if css_plan['rules']:
+        xhtml_payloads = []
+        for xhtml_path in content_files['xhtml']:
+            if os.path.exists(xhtml_path):
+                with open(xhtml_path, 'rb') as f:
+                    xhtml_payloads.append(f.read())
+
+        css_decision = assess_crossink_css_flattening(xhtml_payloads, css_plan)
+        if css_decision['enabled']:
             for xhtml_path in content_files['xhtml']:
                 if os.path.exists(xhtml_path):
                     with open(xhtml_path, 'rb') as f:
@@ -384,12 +392,11 @@ def process_epub(input_path: str, output_path: str,
                         with open(xhtml_path, 'wb') as f:
                             f.write(flattened)
 
-            if css_plan['can_drop_css']:
-                remove_css_from_opf(opf_path)
-                for css_path in existing_css_files:
-                    if os.path.exists(css_path):
-                        os.unlink(css_path)
-                        report.css_files_removed += 1
+            remove_css_from_opf(opf_path)
+            for css_path in existing_css_files:
+                if os.path.exists(css_path):
+                    os.unlink(css_path)
+                    report.css_files_removed += 1
 
         # Step 15: Normalize whitespace and page breaks (84%)
         _progress(84, "Normalizing content...")
