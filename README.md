@@ -2,7 +2,7 @@
 
 **<div align="center">Drop EPUB into folder → Automatically gets optimized → File is moved to your library</div>**<br/>
 
-Optimizes EPUB files for e-readers like the Xteink X3/X4 using a modified Python pipeline from [epubkit](https://github.com/b1rdmania/epubkit). It converts images to baseline JPEG, applies 4-level grayscale, repairs EPUB structure, strips embedded fonts, removes unused CSS, cleans metadata/text, fixes TOCs, handles SVG covers, and repackages the EPUB correctly.
+Optimizes EPUB files for e-readers like the Xteink X3/X4 using a modified Python pipeline from [epubkit](https://github.com/b1rdmania/epubkit). It converts images to baseline JPEG, applies 4-level grayscale, repairs EPUB structure, strips embedded fonts, removes unused CSS, flattens CrossInk-supported stylesheet rules into XHTML, cleans metadata/text, fixes TOCs, handles SVG covers, and repackages the EPUB correctly.
 
 Use it in three ways:
 
@@ -19,6 +19,7 @@ Use it in three ways:
 - Single-library mode also supported: leave `CALIBRE_WATCH_FOLDER` unset and only the optimized copy is produced
 - Uses the full `epubkit` cleanup pipeline, not only image conversion
 - Writes CrossInk word-based location metadata into optimized EPUBs for future stable reading-position support
+- Flattens CrossInk-supported CSS into inline XHTML styles so low-power devices do less stylesheet parsing
 
 # Usage
 
@@ -259,7 +260,7 @@ The output filename may be normalized from the EPUB's internal metadata or title
 
 ### Pipeline
 
-The Python CLI uses the copied `epubkit` pipeline in `cli/epubkit_pipeline/`. It checks for DRM, extracts the EPUB safely, converts images to X4-friendly JPEGs, fixes SVG covers, optionally generates a missing cover, repairs HTML, strips unnecessary attributes, removes unused CSS/fonts, normalizes text and whitespace, cleans store metadata, repairs or generates the TOC, removes OS artifacts, and repackages with the EPUB `mimetype` entry first.
+The Python CLI uses the copied `epubkit` pipeline in `cli/epubkit_pipeline/`. It checks for DRM, extracts the EPUB safely, converts images to X4-friendly JPEGs, fixes SVG covers, optionally generates a missing cover, repairs HTML, strips unnecessary attributes, removes unused CSS/fonts, flattens CrossInk-supported CSS into XHTML, normalizes text and whitespace, cleans store metadata, repairs or generates the TOC, removes OS artifacts, and repackages with the EPUB `mimetype` entry first.
 
 ### Examples
 

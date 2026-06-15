@@ -240,6 +240,35 @@ def update_opf_remove_fonts(opf_path: str, font_files: list[str]) -> int:
     return removed
 
 
+def remove_css_from_opf(opf_path: str) -> int:
+    """Remove CSS stylesheet entries from OPF manifest. Returns count removed."""
+    tree = etree.parse(opf_path)
+    root = tree.getroot()
+
+    manifest = _find_element(root, 'manifest')
+    if manifest is None:
+        return 0
+
+    removed = 0
+    to_remove = []
+    for item in manifest:
+        if not _is_element(item):
+            continue
+        media_type = item.get('media-type', '').lower()
+        href = unquote(item.get('href', '')).lower()
+        if media_type == 'text/css' or href.endswith('.css'):
+            to_remove.append(item)
+
+    for item in to_remove:
+        manifest.remove(item)
+        removed += 1
+
+    if removed > 0:
+        tree.write(opf_path, xml_declaration=True, encoding='utf-8', pretty_print=True)
+
+    return removed
+
+
 def add_image_to_opf(opf_path: str, image_href: str, image_id: str) -> None:
     """Add a new image entry to the OPF manifest."""
     tree = etree.parse(opf_path)

@@ -693,6 +693,31 @@
         '<style type="text/css">img,svg{max-width:100%;height:auto}body{overflow-wrap:break-word}table{max-width:100%;table-layout:fixed}pre,code{white-space:pre-wrap;word-wrap:break-word}*{box-sizing:border-box}</style>';
       const CROSSINK_LOCATION_MANIFEST_PATH = "META-INF/crossink-locations.json";
       const CROSSINK_LOCATION_WORDS_PER_UNIT = 128;
+      const CROSSINK_FLATTENABLE_CSS_PROPERTIES = new Set([
+        "text-align",
+        "font-style",
+        "font-weight",
+        "text-decoration",
+        "text-decoration-line",
+        "text-indent",
+        "margin",
+        "margin-top",
+        "margin-right",
+        "margin-bottom",
+        "margin-left",
+        "padding",
+        "padding-top",
+        "padding-right",
+        "padding-bottom",
+        "padding-left",
+        "height",
+        "width",
+        "display",
+        "background",
+        "background-color",
+        "direction",
+        "vertical-align",
+      ]);
 
       function xmlEscape(str) {
         return str
@@ -974,6 +999,243 @@
           totalLocations: Math.max(0, nextLocation - 1),
           spine,
         };
+      }
+
+      function stripCssComments(cssText) {
+        return cssText.replace(/\/\*[\s\S]*?\*\//g, "");
+      }
+
+      function splitCssList(text, separator) {
+        const parts = [];
+        let current = "";
+        let quote = null;
+        let parenDepth = 0;
+
+        for (let i = 0; i < text.length; i++) {
+          const ch = text[i];
+          if (quote) {
+            current += ch;
+            if (ch === quote && text[i - 1] !== "\\") quote = null;
+            continue;
+          }
+          if (ch === '"' || ch === "'") {
+            quote = ch;
+            current += ch;
+            continue;
+          }
+          if (ch === "(") parenDepth++;
+          else if (ch === ")" && parenDepth > 0) parenDepth--;
+
+          if (ch === separator && parenDepth === 0) {
+            parts.push(current.trim());
+            current = "";
+          } else {
+            current += ch;
+          }
+        }
+
+        if (current.trim()) parts.push(current.trim());
+        return parts;
+      }
+
+      function parseCssDeclarationsForFlattening(declarationText) {
+        const declarations = [];
+        for (const declaration of splitCssList(declarationText, ";")) {
+          const colon = declaration.indexOf(":");
+          if (colon <= 0) continue;
+          const property = declaration.slice(0, colon).trim().toLowerCase();
+          let value = declaration.slice(colon + 1).trim();
+          if (
+            !property ||
+            !value ||
+            !CROSSINK_FLATTENABLE_CSS_PROPERTIES.has(property)
+          )
+            continue;
+          value = value.replace(/\s*!important\s*$/i, "").trim();
+          if (value) declarations.push(`${property}:${value}`);
+        }
+        return declarations;
+      }
+
+      function parseSimpleCrossInkSelector(selectorPart) {
+        const part = selectorPart.trim().toLowerCase();
+        if (!part || /[#:\[\]>+~*]/.test(part)) return null;
+        const match = part.match(
+          /^([a-z][a-z0-9_-]*)?(?:\.([a-z_][a-z0-9_-]*))?$/i,
+        );
+        if (!match || (!match[1] && !match[2])) return null;
+        return { tag: match[1] || null, className: match[2] || null };
+      }
+
+      function parseCrossInkSelector(selector) {
+        const parts = selector.trim().replace(/\s+/g, " ").split(" ");
+        if (parts.length < 1 || parts.length > 2) return null;
+        const parsed = parts.map(parseSimpleCrossInkSelector);
+        if (parsed.some((part) => !part)) return null;
+        return parsed;
+      }
+
+      function elementMatchesSimpleCrossInkSelector(element, selector) {
+        if (selector.tag && element.localName.toLowerCase() !== selector.tag)
+          return false;
+        if (selector.className) {
+          const classes = (element.getAttribute("class") || "")
+            .toLowerCase()
+            .split(/\s+/)
+            .filter(Boolean);
+          if (!classes.includes(selector.className)) return false;
+        }
+        return true;
+      }
+
+      function elementMatchesCrossInkSelector(element, parsedSelector) {
+        const subject = parsedSelector[parsedSelector.length - 1];
+        if (!elementMatchesSimpleCrossInkSelector(element, subject))
+          return false;
+        if (parsedSelector.length === 1) return true;
+
+        const ancestorSelector = parsedSelector[0];
+        let ancestor = element.parentElement;
+        while (ancestor) {
+          if (
+            elementMatchesSimpleCrossInkSelector(ancestor, ancestorSelector)
+          )
+            return true;
+          ancestor = ancestor.parentElement;
+        }
+        return false;
+      }
+
+      function parseCssRulesForFlattening(cssFiles) {
+        const rules = [];
+        let canDropCssFiles = true;
+
+        for (const [path, cssText] of Object.entries(cssFiles)) {
+          const css = stripCssComments(cssText);
+          let index = 0;
+          while (index < css.length) {
+            const open = css.indexOf("{", index);
+            if (open === -1) break;
+            const selectorText = css.slice(index, open).trim();
+            let depth = 1;
+            let close = open + 1;
+            while (close < css.length && depth > 0) {
+              if (css[close] === "{") depth++;
+              else if (css[close] === "}") depth--;
+              close++;
+            }
+            if (depth !== 0) {
+              canDropCssFiles = false;
+              break;
+            }
+
+            const body = css.slice(open + 1, close - 1);
+            index = close;
+            if (!selectorText || selectorText.startsWith("@")) continue;
+
+            const declarations = parseCssDeclarationsForFlattening(body);
+            if (declarations.length === 0) continue;
+
+            for (const selector of splitCssList(selectorText, ",")) {
+              const parsedSelector = parseCrossInkSelector(selector);
+              if (!parsedSelector) {
+                canDropCssFiles = false;
+                continue;
+              }
+              const subject = parsedSelector[parsedSelector.length - 1];
+              const priority =
+                parsedSelector.length === 2
+                  ? 1
+                  : subject.tag && subject.className
+                    ? 3
+                    : subject.className
+                      ? 2
+                      : 0;
+              rules.push({ selector: parsedSelector, declarations, priority, source: path });
+            }
+          }
+        }
+
+        return { rules, canDropCssFiles: canDropCssFiles && rules.length > 0 };
+      }
+
+      function applyCssFlatteningToDoc(doc, cssRules) {
+        if (!cssRules.length) return 0;
+        let changed = 0;
+        const elements = [...doc.getElementsByTagName("*")];
+
+        for (const element of elements) {
+          const flattened = [];
+          for (let priority = 0; priority <= 3; priority++) {
+            for (const rule of cssRules) {
+              if (
+                rule.priority === priority &&
+                elementMatchesCrossInkSelector(element, rule.selector)
+              )
+                flattened.push(...rule.declarations);
+            }
+          }
+          if (flattened.length === 0) continue;
+
+          const existingStyle = (element.getAttribute("style") || "").trim();
+          const mergedStyle = existingStyle
+            ? `${flattened.join(";")};${existingStyle}`
+            : flattened.join(";");
+          element.setAttribute("style", mergedStyle);
+          changed++;
+        }
+
+        return changed;
+      }
+
+      function removeStylesheetLinksFromDoc(doc) {
+        let removed = 0;
+        for (const link of [...doc.getElementsByTagName("link")]) {
+          const rel = (link.getAttribute("rel") || "")
+            .toLowerCase()
+            .split(/\s+/);
+          const type = (link.getAttribute("type") || "").toLowerCase();
+          const href = (link.getAttribute("href") || "").toLowerCase();
+          if (
+            rel.includes("stylesheet") ||
+            type === "text/css" ||
+            href.endsWith(".css")
+          ) {
+            link.remove();
+            removed++;
+          }
+        }
+        return removed;
+      }
+
+      function removeCssManifestItemsFromOpf(opfText, originalContent) {
+        try {
+          const doc = new DOMParser().parseFromString(opfText, "application/xml");
+          if (doc.querySelector("parsererror")) throw new Error("OPF parse failed");
+          let removed = 0;
+          for (const item of getElementsByLocalName(doc, "item")) {
+            const mediaType = (item.getAttribute("media-type") || "").toLowerCase();
+            const href = (item.getAttribute("href") || "").toLowerCase();
+            if (mediaType === "text/css" || href.endsWith(".css")) {
+              item.remove();
+              removed++;
+            }
+          }
+          return {
+            text: removed > 0 ? safeSerialize(doc, originalContent) : opfText,
+            removed,
+          };
+        } catch (e) {
+          let removed = 0;
+          const text = opfText.replace(
+            /<item\b[^>]*(?:media-type=["']text\/css["'][^>]*|href=["'][^"']+\.css["'][^>]*)\/?>/gi,
+            () => {
+              removed++;
+              return "";
+            },
+          );
+          return { text, removed };
+        }
       }
 
       function extractIdentifier(opfContent) {
@@ -1844,6 +2106,7 @@
         const splitImages = {};
         const xhtmlFiles = {};
         const processedXhtmlFiles = {};
+        const cssFiles = {};
         let opfPath = null,
           opfContent = null,
           mainIdentifier = null;
@@ -1956,9 +2219,22 @@
           } else if (low.endsWith(".opf")) {
             opfPath = path;
             opfContent = await safeReadText(fileObj);
+          } else if (low.endsWith(".css")) {
+            cssFiles[path] = await safeReadText(fileObj);
           }
           if (progressCallback) progressCallback((i / entries.length) * 60);
         }
+
+        const preparedCssFiles = {};
+        for (const [path, content] of Object.entries(cssFiles)) {
+          let t = content;
+          for (const [o, n] of Object.entries(renamed))
+            t = t.split(o.split("/").pop()).join(n.split("/").pop());
+          preparedCssFiles[path] = t;
+        }
+        const cssFlattenPlan = parseCssRulesForFlattening(preparedCssFiles);
+        let cssFlattenedElements = 0;
+        let cssLinksRemoved = 0;
 
         // Second pass: XHTML
         for (const [xhtmlPath, content] of Object.entries(xhtmlFiles)) {
@@ -2109,6 +2385,21 @@
                   }
                 }
               }
+              const flattenedCount = applyCssFlatteningToDoc(
+                doc,
+                cssFlattenPlan.rules,
+              );
+              if (flattenedCount > 0) {
+                cssFlattenedElements += flattenedCount;
+                modified = true;
+              }
+              if (cssFlattenPlan.canDropCssFiles) {
+                const removedLinks = removeStylesheetLinksFromDoc(doc);
+                if (removedLinks > 0) {
+                  cssLinksRemoved += removedLinks;
+                  modified = true;
+                }
+              }
               if (modified) t = safeSerialize(doc, content);
             }
           } catch (e) {
@@ -2123,6 +2414,8 @@
           });
           processedXhtmlFiles[xhtmlPath] = t;
         }
+        if (cssFlattenedElements > 0)
+          logFix("CSS flattened", `${cssFlattenedElements} elements`);
 
         // OPF identifier
         if (opfContent) mainIdentifier = extractIdentifier(opfContent);
@@ -2136,6 +2429,16 @@
             ? opfPath.substring(0, opfPath.lastIndexOf("/"))
             : "";
           t = fixOPF(t, opfContent, opfDir, splitImages);
+          if (cssFlattenPlan.canDropCssFiles) {
+            const cssRemoved = removeCssManifestItemsFromOpf(t, t);
+            t = cssRemoved.text;
+            if (cssRemoved.removed > 0 || cssLinksRemoved > 0) {
+              logFix(
+                "CSS files",
+                `${cssRemoved.removed} manifest entries removed`,
+              );
+            }
+          }
           if (t !== opfContent) logFix("OPF", "manifest updated");
           out.file(opfPath, t, {
             compression: "DEFLATE",
@@ -2177,12 +2480,12 @@
             low.endsWith(".opf")
           )
             continue;
+          if (cssFlattenPlan.canDropCssFiles && low.endsWith(".css")) continue;
           let data = await fileObj.async("arraybuffer");
           if (low.endsWith(".css")) {
-            let t = await safeReadText(fileObj);
-            for (const [o, n] of Object.entries(renamed))
-              t = t.split(o.split("/").pop()).join(n.split("/").pop());
-            data = new TextEncoder().encode(t);
+            data = new TextEncoder().encode(
+              preparedCssFiles[path] || (await safeReadText(fileObj)),
+            );
           } else if (low.endsWith(".ncx")) {
             let t = await safeReadText(fileObj);
             for (const [o, n] of Object.entries(renamed))

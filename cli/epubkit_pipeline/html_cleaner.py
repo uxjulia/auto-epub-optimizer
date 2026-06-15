@@ -23,6 +23,31 @@ FONT_MEDIA_TYPES = {
     'application/x-font-otf', 'application/font-sfnt',
 }
 HORIZONTAL_WHITESPACE = frozenset({' ', '\t', '\u00a0'})
+CROSSINK_FLATTENABLE_CSS_PROPERTIES = frozenset({
+    'text-align',
+    'font-style',
+    'font-weight',
+    'text-decoration',
+    'text-decoration-line',
+    'text-indent',
+    'margin',
+    'margin-top',
+    'margin-right',
+    'margin-bottom',
+    'margin-left',
+    'padding',
+    'padding-top',
+    'padding-right',
+    'padding-bottom',
+    'padding-left',
+    'height',
+    'width',
+    'display',
+    'background',
+    'background-color',
+    'direction',
+    'vertical-align',
+})
 
 
 def repair_html(html_bytes: bytes) -> bytes:
@@ -190,6 +215,204 @@ def find_font_files(file_list: list[str]) -> list[str]:
 def is_font_media_type(media_type: str) -> bool:
     """Check if a media type string indicates a font file."""
     return media_type.lower() in FONT_MEDIA_TYPES
+
+
+def _local_name(tag) -> str:
+    if not isinstance(tag, str):
+        return ''
+    return tag.split('}')[-1].lower() if '}' in tag else tag.lower()
+
+
+def _split_css_selector_list(selector_text: str) -> list[str]:
+    selectors = []
+    current = []
+    quote = None
+    paren_depth = 0
+
+    for ch in selector_text:
+        if quote:
+            current.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ('"', "'"):
+            quote = ch
+            current.append(ch)
+            continue
+        if ch == '(':
+            paren_depth += 1
+        elif ch == ')' and paren_depth > 0:
+            paren_depth -= 1
+        if ch == ',' and paren_depth == 0:
+            selector = ''.join(current).strip()
+            if selector:
+                selectors.append(selector)
+            current = []
+        else:
+            current.append(ch)
+
+    selector = ''.join(current).strip()
+    if selector:
+        selectors.append(selector)
+    return selectors
+
+
+def _parse_simple_crossink_selector(selector_part: str) -> Optional[dict]:
+    part = selector_part.strip().lower()
+    if not part or re.search(r'[#:\[\]>+~*]', part):
+        return None
+    match = re.fullmatch(r'([a-z][a-z0-9_-]*)?(?:\.([a-z_][a-z0-9_-]*))?', part)
+    if not match or (not match.group(1) and not match.group(2)):
+        return None
+    return {'tag': match.group(1), 'class': match.group(2)}
+
+
+def _parse_crossink_selector(selector: str) -> Optional[list[dict]]:
+    parts = re.split(r'\s+', selector.strip())
+    if len(parts) < 1 or len(parts) > 2:
+        return None
+    parsed = [_parse_simple_crossink_selector(part) for part in parts]
+    if any(part is None for part in parsed):
+        return None
+    return parsed
+
+
+def _crossink_selector_priority(parsed_selector: list[dict]) -> int:
+    subject = parsed_selector[-1]
+    if len(parsed_selector) == 2:
+        return 1
+    if subject['tag'] and subject['class']:
+        return 3
+    if subject['class']:
+        return 2
+    return 0
+
+
+def _element_matches_simple_crossink_selector(element, selector: dict) -> bool:
+    if selector['tag'] and _local_name(element.tag) != selector['tag']:
+        return False
+    if selector['class']:
+        classes = (element.get('class') or '').lower().split()
+        if selector['class'] not in classes:
+            return False
+    return True
+
+
+def _element_matches_crossink_selector(element, parsed_selector: list[dict]) -> bool:
+    if not _element_matches_simple_crossink_selector(element, parsed_selector[-1]):
+        return False
+    if len(parsed_selector) == 1:
+        return True
+
+    ancestor_selector = parsed_selector[0]
+    parent = element.getparent()
+    while parent is not None:
+        if _element_matches_simple_crossink_selector(parent, ancestor_selector):
+            return True
+        parent = parent.getparent()
+    return False
+
+
+def build_crossink_css_plan(css_texts: list[str]) -> dict:
+    """
+    Parse CSS into the selector/property subset CrossInk firmware understands.
+    Returns {rules, can_drop_css}; CSS can be dropped only when every supported
+    declaration came from a selector shape CrossInk can resolve.
+    """
+    rules = []
+    can_drop_css = True
+
+    for css_text in css_texts:
+        try:
+            sheet = cssutils.parseString(css_text)
+        except Exception:
+            can_drop_css = False
+            continue
+
+        for rule in sheet:
+            if rule.type != rule.STYLE_RULE:
+                continue
+
+            declarations = []
+            for prop in rule.style.getProperties(all=True):
+                name = (prop.name or '').lower()
+                value = (prop.value or '').strip()
+                if name in CROSSINK_FLATTENABLE_CSS_PROPERTIES and value:
+                    declarations.append(f'{name}:{value}')
+
+            if not declarations:
+                continue
+
+            for selector in _split_css_selector_list(rule.selectorText):
+                parsed_selector = _parse_crossink_selector(selector)
+                if parsed_selector is None:
+                    can_drop_css = False
+                    continue
+                rules.append({
+                    'selector': parsed_selector,
+                    'declarations': declarations,
+                    'priority': _crossink_selector_priority(parsed_selector),
+                })
+
+    return {'rules': rules, 'can_drop_css': can_drop_css and bool(rules)}
+
+
+def flatten_crossink_css_in_xhtml(xhtml_bytes: bytes, css_plan: dict) -> tuple[bytes, int, int]:
+    """
+    Inline CrossInk-supported stylesheet declarations into matching XHTML nodes.
+    Inline styles are appended after selector priorities are ordered to match
+    the firmware's resolver: element, descendant, class, element.class.
+    """
+    rules = css_plan.get('rules') or []
+    if not rules:
+        return xhtml_bytes, 0, 0
+
+    try:
+        tree = etree.fromstring(xhtml_bytes)
+    except etree.XMLSyntaxError:
+        parser = etree.HTMLParser(recover=True)
+        tree = etree.fromstring(xhtml_bytes, parser)
+        if tree is None:
+            return xhtml_bytes, 0, 0
+
+    flattened = 0
+    for element in tree.iter():
+        if not isinstance(element.tag, str):
+            continue
+        declarations = []
+        for priority in range(4):
+            for rule in rules:
+                if rule['priority'] == priority and _element_matches_crossink_selector(element, rule['selector']):
+                    declarations.extend(rule['declarations'])
+        if not declarations:
+            continue
+
+        existing_style = (element.get('style') or '').strip()
+        merged_style = ';'.join(declarations)
+        if existing_style:
+            merged_style = f'{merged_style};{existing_style}'
+        element.set('style', merged_style)
+        flattened += 1
+
+    removed_links = 0
+    if css_plan.get('can_drop_css'):
+        for element in list(tree.iter()):
+            if _local_name(element.tag) != 'link':
+                continue
+            rel = (element.get('rel') or '').lower().split()
+            link_type = (element.get('type') or '').lower()
+            href = (element.get('href') or '').lower()
+            if 'stylesheet' in rel or link_type == 'text/css' or href.endswith('.css'):
+                parent = element.getparent()
+                if parent is not None:
+                    parent.remove(element)
+                    removed_links += 1
+
+    if flattened == 0 and removed_links == 0:
+        return xhtml_bytes, 0, 0
+
+    result = etree.tostring(tree, encoding='unicode', pretty_print=True)
+    return result.encode('utf-8'), flattened, removed_links
 
 
 def _has_text_content(text: Optional[str]) -> bool:
