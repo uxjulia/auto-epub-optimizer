@@ -54,7 +54,9 @@ class ProcessingOptions:
     generate_missing_cover: bool = True
     clean_metadata: bool = True
     text_cleanup: bool = True
-    normalize_quotes: bool = True
+    normalize_quotes: bool = False
+    normalize_dashes: bool = False
+    normalize_ellipsis: bool = True
     filename_format: str = 'author-title'
     # Metadata edits (applied if non-empty)
     metadata_edits: dict = field(default_factory=dict)
@@ -86,6 +88,7 @@ class ProcessingReport:
     os_artifacts_removed: int = 0
     cover_generated: bool = False
     crossink_locations: int = 0
+    crossink_reference_pages: int = 0
     # Details
     image_details: list = field(default_factory=list)
 
@@ -134,7 +137,10 @@ class ProcessingReport:
             parts.append(f"Removed {self.os_artifacts_removed} OS artifacts")
 
         if self.crossink_locations > 0:
-            parts.append(f"Generated {self.crossink_locations} CrossInk locations")
+            parts.append(
+                f"Generated {self.crossink_locations} CrossInk locations"
+                f" and {self.crossink_reference_pages} reference pages"
+            )
 
         if self.original_size > 0 and self.optimized_size > 0:
             reduction = (1 - self.optimized_size / self.original_size) * 100
@@ -413,7 +419,11 @@ def process_epub(input_path: str, output_path: str,
         # Step 16: Text content cleanup (86%)
         if options.text_cleanup:
             _progress(86, "Cleaning text content...")
-            text_opts = TextCleanOptions(normalize_quotes=options.normalize_quotes)
+            text_opts = TextCleanOptions(
+                normalize_quotes=options.normalize_quotes,
+                normalize_dashes=options.normalize_dashes,
+                normalize_ellipsis=options.normalize_ellipsis,
+            )
             aggregate_report = TextCleanReport()
 
             for xhtml_path in content_files['xhtml']:
@@ -444,7 +454,9 @@ def process_epub(input_path: str, output_path: str,
 
         # Step 18: Generate CrossInk location sidecar (92%)
         _progress(92, "Generating CrossInk locations...")
-        report.crossink_locations = write_crossink_location_manifest(work_dir, opf_path)
+        report.crossink_locations, report.crossink_reference_pages = write_crossink_location_manifest(
+            work_dir, opf_path
+        )
 
         # Step 18: Clean OS artifacts (93%)
         _progress(93, "Cleaning up...")

@@ -132,7 +132,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-generate-cover", dest="generate_cover", action="store_false", help="do not generate a missing cover")
     parser.add_argument("--no-clean-metadata", dest="clean_metadata", action="store_false", help="keep store-specific metadata")
     parser.add_argument("--no-text-cleanup", dest="text_cleanup", action="store_false", help="disable text cleanup")
-    parser.add_argument("--keep-quotes", dest="normalize_quotes", action="store_false", help="do not normalize smart quotes")
+    parser.add_argument("--normalize-quotes", dest="normalize_quotes", action="store_true", help="normalize curly quotes to straight quotes")
+    parser.add_argument("--keep-quotes", dest="normalize_quotes", action="store_false", help="keep curly quotes unchanged")
+    parser.add_argument("--normalize-dashes", dest="normalize_dashes", action="store_true", help="normalize em/en dashes to ASCII dashes")
+    parser.add_argument("--keep-dashes", dest="normalize_dashes", action="store_false", help="keep em/en dashes unchanged")
+    parser.add_argument("--no-normalize-ellipsis", dest="normalize_ellipsis", action="store_false", help="keep ellipsis characters unchanged")
     parser.add_argument(
         "--filename-format",
         choices=("author-title", "title-author", "title"),
@@ -156,7 +160,9 @@ def build_parser() -> argparse.ArgumentParser:
         generate_cover=True,
         clean_metadata=True,
         text_cleanup=True,
-        normalize_quotes=True,
+        normalize_quotes=False,
+        normalize_dashes=False,
+        normalize_ellipsis=True,
     )
     return parser
 
@@ -178,6 +184,8 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         clean_metadata=args.clean_metadata,
         text_cleanup=args.text_cleanup,
         normalize_quotes=args.normalize_quotes,
+        normalize_dashes=args.normalize_dashes,
+        normalize_ellipsis=args.normalize_ellipsis,
         filename_format=args.filename_format,
     )
 

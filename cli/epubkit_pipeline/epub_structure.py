@@ -29,7 +29,8 @@ NS_XLINK = 'http://www.w3.org/1999/xlink'
 NS_NCX = 'http://www.daisy.org/z3986/2005/ncx/'
 NS_EPUB = 'http://www.idpf.org/2007/ops'
 CROSSINK_LOCATION_MANIFEST_PATH = os.path.join('META-INF', 'crossink-locations.json')
-CROSSINK_LOCATION_WORDS_PER_UNIT = 128
+CROSSINK_LOCATION_WORDS_PER_UNIT = 64
+CROSSINK_REFERENCE_WORDS_PER_PAGE = 250
 
 
 def _is_element(node):
@@ -108,10 +109,10 @@ def _spine_hrefs(opf_path: str) -> list[str]:
     return hrefs
 
 
-def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> int:
+def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> tuple[int, int]:
     """
     Write META-INF/crossink-locations.json with stable word-based EPUB locations.
-    Returns the generated location count.
+    Returns the generated location and reference page counts.
     """
     opf_dir = Path(opf_path).parent
     spine = []
@@ -127,6 +128,11 @@ def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> int:
         location_count = (word_count + CROSSINK_LOCATION_WORDS_PER_UNIT - 1) // CROSSINK_LOCATION_WORDS_PER_UNIT
         start_location = next_location if location_count > 0 else 0
         end_location = next_location + location_count - 1 if location_count > 0 else 0
+        start_reference_page = (total_words // CROSSINK_REFERENCE_WORDS_PER_PAGE) + 1 if word_count > 0 else 0
+        end_reference_page = (
+            (total_words + word_count + CROSSINK_REFERENCE_WORDS_PER_PAGE - 1) // CROSSINK_REFERENCE_WORDS_PER_PAGE
+            if word_count > 0 else 0
+        )
 
         spine.append({
             'index': index,
@@ -135,13 +141,15 @@ def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> int:
             'wordCount': word_count,
             'startLocation': start_location,
             'endLocation': end_location,
+            'startReferencePage': start_reference_page,
+            'endReferencePage': end_reference_page,
         })
 
         total_words += word_count
         next_location += location_count
 
     if not spine:
-        return 0
+        return 0, 0
 
     manifest = {
         'format': 'crossink-locations',
@@ -149,15 +157,19 @@ def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> int:
         'generator': 'auto-epub-optimizer-cli',
         'unit': 'word',
         'wordsPerLocation': CROSSINK_LOCATION_WORDS_PER_UNIT,
+        'wordsPerReferencePage': CROSSINK_REFERENCE_WORDS_PER_PAGE,
         'totalWords': total_words,
         'totalLocations': max(0, next_location - 1),
+        'totalReferencePages': (
+            total_words + CROSSINK_REFERENCE_WORDS_PER_PAGE - 1
+        ) // CROSSINK_REFERENCE_WORDS_PER_PAGE,
         'spine': spine,
     }
 
     out_path = Path(epub_dir) / CROSSINK_LOCATION_MANIFEST_PATH
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(manifest, separators=(',', ':')), encoding='utf-8')
-    return manifest['totalLocations']
+    return manifest['totalLocations'], manifest['totalReferencePages']
 
 
 def build_rename_map(epub_dir: str, processed_images: dict) -> dict:

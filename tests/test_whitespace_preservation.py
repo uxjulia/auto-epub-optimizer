@@ -46,6 +46,35 @@ class WhitespacePreservationTests(unittest.TestCase):
         self.assertIn(b'Hello world', cleaned)
         self.assertGreater(report.double_spaces_fixed, 0)
 
+    def test_clean_text_content_keeps_curly_quotes_and_dashes_by_default(self):
+        xhtml = (
+            '<html xmlns="http://www.w3.org/1999/xhtml">'
+            '<body><p>“Hello”—she said–quietly…</p></body></html>'
+        ).encode('utf-8')
+
+        cleaned, report = clean_text_content(xhtml, TextCleanOptions())
+
+        self.assertIn('“Hello”—she said–quietly...', cleaned.decode('utf-8'))
+        self.assertEqual(report.smart_quotes_normalized, 0)
+        self.assertEqual(report.dashes_normalized, 0)
+        self.assertEqual(report.ellipses_normalized, 1)
+
+    def test_clean_text_content_can_normalize_quotes_and_dashes_separately(self):
+        xhtml = (
+            '<html xmlns="http://www.w3.org/1999/xhtml">'
+            '<body><p>“Hello”—she said–quietly…</p></body></html>'
+        ).encode('utf-8')
+
+        cleaned, report = clean_text_content(
+            xhtml,
+            TextCleanOptions(normalize_quotes=True, normalize_dashes=True),
+        )
+
+        self.assertIn('"Hello"--she said-quietly...', cleaned.decode('utf-8'))
+        self.assertEqual(report.smart_quotes_normalized, 2)
+        self.assertEqual(report.dashes_normalized, 2)
+        self.assertEqual(report.ellipses_normalized, 1)
+
     def test_format_filename_defaults_to_author_then_title(self):
         self.assertEqual(
             format_filename("My Book", "Jane Doe"),

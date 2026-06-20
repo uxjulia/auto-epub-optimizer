@@ -253,6 +253,9 @@ The output filename may be normalized from the EPUB's internal metadata or title
 | `--no-generate-cover`  | -              | Do not generate missing cover art         |
 | `--no-clean-metadata`  | -              | Keep store-specific metadata              |
 | `--no-text-cleanup`    | -              | Disable text cleanup                      |
+| `--normalize-quotes`   | -              | Convert curly quotes to straight quotes   |
+| `--normalize-dashes`   | -              | Convert em/en dashes to ASCII dashes      |
+| `--no-normalize-ellipsis` | -           | Keep ellipsis characters unchanged        |
 | `--filename-format`    | `author-title` | Output filename pattern from metadata     |
 | `--suffix <str>`       | empty          | Suffix appended to output filename        |
 | `-v, --verbose`        | -              | Print progress and summary details        |

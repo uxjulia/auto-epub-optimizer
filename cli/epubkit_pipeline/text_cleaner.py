@@ -15,6 +15,8 @@ class TextCleanReport:
     double_spaces_fixed: int = 0
     ocr_ligatures_fixed: int = 0
     smart_quotes_normalized: int = 0
+    dashes_normalized: int = 0
+    ellipses_normalized: int = 0
     encoding_issues_fixed: int = 0
     unicode_normalized: int = 0
     punctuation_fixed: int = 0
@@ -28,6 +30,10 @@ class TextCleanReport:
             parts.append(f"{self.ocr_ligatures_fixed} OCR artifacts")
         if self.smart_quotes_normalized:
             parts.append(f"{self.smart_quotes_normalized} quotes normalized")
+        if self.dashes_normalized:
+            parts.append(f"{self.dashes_normalized} dashes normalized")
+        if self.ellipses_normalized:
+            parts.append(f"{self.ellipses_normalized} ellipses normalized")
         if self.encoding_issues_fixed:
             parts.append(f"{self.encoding_issues_fixed} encoding fixes")
         if self.punctuation_fixed:
@@ -41,6 +47,8 @@ class TextCleanReport:
         self.double_spaces_fixed += other.double_spaces_fixed
         self.ocr_ligatures_fixed += other.ocr_ligatures_fixed
         self.smart_quotes_normalized += other.smart_quotes_normalized
+        self.dashes_normalized += other.dashes_normalized
+        self.ellipses_normalized += other.ellipses_normalized
         self.encoding_issues_fixed += other.encoding_issues_fixed
         self.unicode_normalized += other.unicode_normalized
         self.punctuation_fixed += other.punctuation_fixed
@@ -51,7 +59,9 @@ class TextCleanReport:
 class TextCleanOptions:
     fix_whitespace: bool = True
     fix_ocr: bool = True
-    normalize_quotes: bool = True
+    normalize_quotes: bool = False
+    normalize_dashes: bool = False
+    normalize_ellipsis: bool = True
     fix_encoding: bool = True
     fix_punctuation: bool = True
     normalize_unicode: bool = True
@@ -71,11 +81,20 @@ SMART_QUOTE_MAP = {
     '\u2019': "'",   # right single quote
     '\u201c': '"',   # left double quote
     '\u201d': '"',   # right double quote
+    '\u201a': ',',   # low-9 quote (often misread comma)
+}
+
+DASH_MAP = {
     '\u2014': '--',  # em dash
     '\u2013': '-',   # en dash
+}
+
+ELLIPSIS_MAP = {
     '\u2026': '...', # ellipsis character
+}
+
+SPACING_MAP = {
     '\u00a0': ' ',   # non-breaking space
-    '\u201a': ',',   # low-9 quote (often misread comma)
 }
 
 # Common mojibake patterns (UTF-8 bytes misinterpreted as Latin-1)
@@ -118,27 +137,33 @@ def _fix_whitespace(text: str) -> tuple[str, int]:
     return result, count
 
 
-def _fix_ocr_artifacts(text: str, normalize_quotes: bool = True) -> tuple[str, int, int]:
-    """Fix OCR ligature artifacts and optionally normalize smart quotes."""
-    lig_count = 0
-    quote_count = 0
-
-    # Fix ligatures
-    for old, new in OCR_LIGATURES.items():
+def _replace_chars(text: str, replacements: dict[str, str]) -> tuple[str, int]:
+    count = 0
+    for old, new in replacements.items():
         if old in text:
             n = text.count(old)
             text = text.replace(old, new)
-            lig_count += n
+            count += n
+    return text, count
 
-    # Normalize smart quotes/dashes
-    if normalize_quotes:
-        for old, new in SMART_QUOTE_MAP.items():
-            if old in text:
-                n = text.count(old)
-                text = text.replace(old, new)
-                quote_count += n
 
-    return text, lig_count, quote_count
+def _normalize_typographic_punctuation(
+    text: str,
+    options: TextCleanOptions,
+) -> tuple[str, int, int, int]:
+    """Optionally normalize quotes, dashes, and ellipsis characters."""
+    quote_count = 0
+    dash_count = 0
+    ellipsis_count = 0
+
+    if options.normalize_quotes:
+        text, quote_count = _replace_chars(text, SMART_QUOTE_MAP)
+    if options.normalize_dashes:
+        text, dash_count = _replace_chars(text, DASH_MAP)
+    if options.normalize_ellipsis:
+        text, ellipsis_count = _replace_chars(text, ELLIPSIS_MAP)
+
+    return text, quote_count, dash_count, ellipsis_count
 
 
 def _fix_mojibake(text: str) -> tuple[str, int]:
@@ -210,9 +235,17 @@ def clean_text_content(xhtml_bytes: bytes, options: TextCleanOptions = None) -> 
             report.double_spaces_fixed += n
 
         if options.fix_ocr:
-            text, lig_n, quote_n = _fix_ocr_artifacts(text, options.normalize_quotes)
+            text, lig_n = _replace_chars(text, OCR_LIGATURES)
             report.ocr_ligatures_fixed += lig_n
-            report.smart_quotes_normalized += quote_n
+
+        text, quote_n, dash_n, ellipsis_n = _normalize_typographic_punctuation(text, options)
+        report.smart_quotes_normalized += quote_n
+        report.dashes_normalized += dash_n
+        report.ellipses_normalized += ellipsis_n
+
+        if options.fix_whitespace:
+            text, spacing_n = _replace_chars(text, SPACING_MAP)
+            report.double_spaces_fixed += spacing_n
 
         if options.fix_encoding:
             text, n = _fix_mojibake(text)
@@ -251,6 +284,8 @@ def clean_text_content(xhtml_bytes: bytes, options: TextCleanOptions = None) -> 
         report.double_spaces_fixed +
         report.ocr_ligatures_fixed +
         report.smart_quotes_normalized +
+        report.dashes_normalized +
+        report.ellipses_normalized +
         report.encoding_issues_fixed +
         report.punctuation_fixed +
         report.unicode_normalized
