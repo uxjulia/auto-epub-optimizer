@@ -106,15 +106,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o", "--output", default="./optimized", help="output directory")
     parser.add_argument("-q", "--quality", type=bounded_int(1, 100), default=70, help="JPEG quality 1-100")
     parser.add_argument("--no-grayscale", dest="grayscale", action="store_false", help="disable grayscale conversion")
-    parser.add_argument("--no-contrast", dest="contrast_boost", action="store_false", help="disable contrast boost")
+    parser.add_argument("--contrast", dest="contrast_boost", action="store_true", help="enable contrast boost")
     parser.add_argument(
         "-c",
-        "--contrast",
         "--contrast-factor",
         dest="contrast_factor",
         type=float,
         default=1.0,
-        help="contrast multiplier, e.g. 1.2 or 1.5",
+        help="contrast multiplier used with --contrast, e.g. 1.2 or 1.5",
     )
     parser.add_argument("--no-eink-quantize", dest="eink_quantize", action="store_false", help="disable 4-level e-ink quantization")
     parser.add_argument("-W", "--max-width", type=int, default=800, help="maximum image width in px")

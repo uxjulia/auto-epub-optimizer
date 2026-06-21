@@ -38,8 +38,8 @@ from epub_structure import (
 class ProcessingOptions:
     """All user-configurable processing options."""
     grayscale: bool = True
-    contrast_boost: bool = True
-    contrast_factor: float = 1.5  # Higher default for 4-level display
+    contrast_boost: bool = False
+    contrast_factor: float = 1.0
     quality: int = 70
     max_width: int = 800
     max_height: int = 480
