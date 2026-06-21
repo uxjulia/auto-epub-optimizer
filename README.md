@@ -19,7 +19,12 @@ Use it in three ways:
 - Single-library mode also supported: leave `CALIBRE_WATCH_FOLDER` unset and only the optimized copy is produced
 - Uses the full `epubkit` cleanup pipeline, not only image conversion
 
-# Usage
+# Usage/Installation
+There are four ways to install or use this workflow:
+1. [Docker](#docker-compose)
+2. [Systemd](#systemd-automated-watcher-linux--wsl2)
+3. [Manually via your local Browser](#browser-no-install-required)
+4. [Manually via CLI](#cli)
 
 > Note: The default settings are for the XTEINK X4's 800x480 image bounds. For another device, set `EPUB_MAX_WIDTH` and `EPUB_MAX_HEIGHT` in your config or pass `-W`/`-H` to `cli/optimize.py`.
 
