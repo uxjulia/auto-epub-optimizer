@@ -113,7 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--contrast-factor",
         dest="contrast_factor",
         type=float,
-        default=1.5,
+        default=1.0,
         help="contrast multiplier, e.g. 1.2 or 1.5",
     )
     parser.add_argument("--no-eink-quantize", dest="eink_quantize", action="store_false", help="disable 4-level e-ink quantization")
@@ -149,7 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.set_defaults(
         grayscale=True,
-        contrast_boost=True,
+        contrast_boost=False,
         eink_quantize=True,
         remove_fonts=True,
         remove_css=True,
