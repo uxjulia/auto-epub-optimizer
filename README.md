@@ -21,7 +21,12 @@ Use it in three ways:
 - Writes CrossInk word-based location metadata into optimized EPUBs for future stable reading-position support
 - Flattens CrossInk-supported CSS into inline XHTML styles so low-power devices do less stylesheet parsing
 
-# Usage
+# Usage/Installation
+There are four ways to install or use this workflow:
+1. [Docker](#docker-compose)
+2. [Systemd](#systemd-automated-watcher-linux--wsl2)
+3. [Manually via your local Browser](#browser-no-install-required)
+4. [Manually via CLI](#cli)
 
 > Note: The default settings are for the XTEINK X4's 800x480 image bounds. For another device, set `EPUB_MAX_WIDTH` and `EPUB_MAX_HEIGHT` in your config or pass `-W`/`-H` to `cli/optimize.py`.
 
@@ -122,8 +127,11 @@ Edit `~/.config/epub-optimizer/.env`:
 | `EPUB_QUALITY`         | Optional JPEG quality, default `70`                                                                                                |
 | `EPUB_MAX_WIDTH`       | Optional max image width, default `800`                                                                                            |
 | `EPUB_MAX_HEIGHT`      | Optional max image height, default `480`                                                                                           |
-| `EPUB_CONTRAST`        | Optional contrast multiplier, default `1.5`                                                                                        |
+| `EPUB_CONTRAST`        | Optional - set to `1` to enable contrast boost                                                                                     |
+| `EPUB_CONTRAST_FACTOR` | Optional contrast multiplier used when contrast boost is enabled, default `1.0`                                                     |
 | `EPUB_LIGHT_NOVEL`     | Optional - set to `1` to rotate/split landscape light-novel images                                                                 |
+| `EPUB_SPLIT_LONG_SECTIONS` | Optional - set to `1` to split oversized XHTML spine items into smaller reader sections                                         |
+| `EPUB_SECTION_SPLIT_WORD_THRESHOLD` | Optional visible-word threshold for `EPUB_SPLIT_LONG_SECTIONS`, default `2000`                                       |
 | `EPUB_FILENAME_FORMAT` | Optional output name pattern: `author-title`, `title-author`, or `title`                                                           |
 | `EPUB_SUFFIX`          | Optional suffix appended before `.epub`, e.g. `-optimized`                                                                         |
 
@@ -242,8 +250,8 @@ The output filename may be normalized from the EPUB's internal metadata or title
 | `-o, --output <dir>`   | `./optimized`  | Output directory                          |
 | `-q, --quality <n>`    | `70`           | JPEG quality (1-100)                      |
 | `--no-grayscale`       | -              | Disable grayscale conversion              |
-| `--no-contrast`        | -              | Disable contrast boost                    |
-| `--contrast <n>`       | `1.5`          | Contrast multiplier for images            |
+| `--contrast`           | -              | Enable contrast boost                     |
+| `-c, --contrast-factor <n>` | `1.0`     | Contrast multiplier used with `--contrast` |
 | `--no-eink-quantize`   | -              | Disable 4-level e-ink quantization        |
 | `-W, --max-width <n>`  | `800`          | Max image width in px                     |
 | `-H, --max-height <n>` | `480`          | Max image height in px                    |
@@ -256,6 +264,8 @@ The output filename may be normalized from the EPUB's internal metadata or title
 | `--normalize-quotes`   | -              | Convert curly quotes to straight quotes   |
 | `--normalize-dashes`   | -              | Convert em/en dashes to ASCII dashes      |
 | `--no-normalize-ellipsis` | -           | Keep ellipsis characters unchanged        |
+| `--split-long-sections` | -             | Split oversized XHTML spine items into smaller reader sections |
+| `--section-split-word-threshold <words>` | `2000` | Visible-word threshold used with `--split-long-sections` |
 | `--filename-format`    | `author-title` | Output filename pattern from metadata     |
 | `--suffix <str>`       | empty          | Suffix appended to output filename        |
 | `-v, --verbose`        | -              | Print progress and summary details        |
@@ -263,7 +273,7 @@ The output filename may be normalized from the EPUB's internal metadata or title
 
 ### Pipeline
 
-The Python CLI uses the copied `epubkit` pipeline in `cli/epubkit_pipeline/`. It checks for DRM, extracts the EPUB safely, converts images to X4-friendly JPEGs, fixes SVG covers, optionally generates a missing cover, repairs HTML, strips unnecessary attributes, removes unused CSS/fonts, flattens CrossInk-supported CSS into XHTML, normalizes text and whitespace, cleans store metadata, repairs or generates the TOC, removes OS artifacts, and repackages with the EPUB `mimetype` entry first.
+The Python CLI uses the copied `epubkit` pipeline in `cli/epubkit_pipeline/`. It checks for DRM, extracts the EPUB safely, converts images to X4-friendly JPEGs, fixes SVG covers, optionally generates a missing cover, repairs HTML, strips unnecessary attributes, removes unused CSS/fonts, normalizes text and whitespace, optionally splits very long XHTML spine items into smaller reader sections, cleans store metadata, repairs or generates the TOC, removes OS artifacts, and repackages with the EPUB `mimetype` entry first.
 
 ### Examples
 
@@ -282,4 +292,7 @@ python3 cli/optimize.py --filename-format=title-author book.epub
 
 # Faster cleanup that keeps CSS and embedded fonts
 python3 cli/optimize.py --no-remove-css --no-remove-fonts book.epub
+
+# Split very long chapters into smaller reader sections for CrossInk
+python3 cli/optimize.py --split-long-sections book.epub
 ```

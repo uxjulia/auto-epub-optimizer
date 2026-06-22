@@ -106,15 +106,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o", "--output", default="./optimized", help="output directory")
     parser.add_argument("-q", "--quality", type=bounded_int(1, 100), default=70, help="JPEG quality 1-100")
     parser.add_argument("--no-grayscale", dest="grayscale", action="store_false", help="disable grayscale conversion")
-    parser.add_argument("--no-contrast", dest="contrast_boost", action="store_false", help="disable contrast boost")
+    parser.add_argument("--contrast", dest="contrast_boost", action="store_true", help="enable contrast boost")
     parser.add_argument(
         "-c",
-        "--contrast",
         "--contrast-factor",
         dest="contrast_factor",
         type=float,
         default=1.0,
-        help="contrast multiplier, e.g. 1.2 or 1.5",
+        help="contrast multiplier used with --contrast, e.g. 1.2 or 1.5",
     )
     parser.add_argument("--no-eink-quantize", dest="eink_quantize", action="store_false", help="disable 4-level e-ink quantization")
     parser.add_argument("-W", "--max-width", type=int, default=800, help="maximum image width in px")
@@ -137,6 +136,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--normalize-dashes", dest="normalize_dashes", action="store_true", help="normalize em/en dashes to ASCII dashes")
     parser.add_argument("--keep-dashes", dest="normalize_dashes", action="store_false", help="keep em/en dashes unchanged")
     parser.add_argument("--no-normalize-ellipsis", dest="normalize_ellipsis", action="store_false", help="keep ellipsis characters unchanged")
+    parser.add_argument(
+        "--split-long-sections",
+        action="store_true",
+        help="split oversized XHTML spine items into smaller EPUB sections",
+    )
+    parser.add_argument(
+        "--section-split-word-threshold",
+        type=int,
+        default=2000,
+        help="visible word threshold for --split-long-sections",
+    )
     parser.add_argument(
         "--filename-format",
         choices=("author-title", "title-author", "title"),
@@ -186,6 +196,8 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         normalize_quotes=args.normalize_quotes,
         normalize_dashes=args.normalize_dashes,
         normalize_ellipsis=args.normalize_ellipsis,
+        split_long_sections=args.split_long_sections,
+        section_split_word_threshold=args.section_split_word_threshold,
         filename_format=args.filename_format,
     )
 

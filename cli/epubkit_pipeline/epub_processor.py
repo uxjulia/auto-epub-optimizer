@@ -35,14 +35,15 @@ from epub_structure import (
     fix_svg_covers, fix_toc, find_content_files, add_image_to_opf,
     write_crossink_location_manifest, remove_css_from_opf
 )
+from section_splitter import split_long_spine_sections
 
 
 @dataclass
 class ProcessingOptions:
     """All user-configurable processing options."""
     grayscale: bool = True
-    contrast_boost: bool = True
-    contrast_factor: float = 1.5  # Higher default for 4-level display
+    contrast_boost: bool = False
+    contrast_factor: float = 1.0
     quality: int = 70
     max_width: int = 800
     max_height: int = 480
@@ -57,6 +58,8 @@ class ProcessingOptions:
     normalize_quotes: bool = False
     normalize_dashes: bool = False
     normalize_ellipsis: bool = True
+    split_long_sections: bool = False
+    section_split_word_threshold: int = 2000
     filename_format: str = 'author-title'
     # Metadata edits (applied if non-empty)
     metadata_edits: dict = field(default_factory=dict)
@@ -85,6 +88,9 @@ class ProcessingReport:
     attrs_stripped: int = 0
     text_fixes_total: int = 0
     text_cleanup_summary: str = ''
+    sections_split: int = 0
+    synthetic_sections_added: int = 0
+    section_links_rewritten: int = 0
     os_artifacts_removed: int = 0
     cover_generated: bool = False
     crossink_locations: int = 0
@@ -132,6 +138,10 @@ class ProcessingReport:
 
         if self.text_fixes_total > 0:
             parts.append(f"Text cleanup: {self.text_cleanup_summary}")
+
+        if self.sections_split > 0:
+            total_sections = self.sections_split + self.synthetic_sections_added
+            parts.append(f"Split {self.sections_split} long EPUB section(s) into {total_sections} smaller sections")
 
         if self.os_artifacts_removed > 0:
             parts.append(f"Removed {self.os_artifacts_removed} OS artifacts")
@@ -439,7 +449,15 @@ def process_epub(input_path: str, output_path: str,
             report.text_fixes_total = aggregate_report.total_fixes
             report.text_cleanup_summary = aggregate_report.summary()
 
-        # Step 16: Clean metadata (88%)
+        # Step 16: Split long spine sections (86%)
+        if options.split_long_sections:
+            _progress(86, "Splitting long EPUB sections...")
+            split_report = split_long_spine_sections(work_dir, opf_path, options.section_split_word_threshold)
+            report.sections_split = split_report.files_split
+            report.synthetic_sections_added = split_report.sections_added
+            report.section_links_rewritten = split_report.links_rewritten
+
+        # Step 17: Clean metadata (88%)
         if options.clean_metadata:
             _progress(87, "Cleaning metadata...")
             opf_tree = etree.parse(opf_path)
@@ -447,26 +465,26 @@ def process_epub(input_path: str, output_path: str,
             if report.metadata_items_stripped > 0:
                 opf_tree.write(opf_path, xml_declaration=True, encoding='utf-8', pretty_print=True)
 
-        # Step 17: Fix TOC (90%)
+        # Step 18: Fix TOC (90%)
         _progress(90, "Checking TOC...")
         toc_fixed, toc_msg = fix_toc(work_dir, opf_path)
         report.toc_status = toc_msg
 
-        # Step 18: Generate CrossInk location sidecar (92%)
+        # Step 19: Generate CrossInk location sidecar (92%)
         _progress(92, "Generating CrossInk locations...")
         report.crossink_locations, report.crossink_reference_pages = write_crossink_location_manifest(
             work_dir, opf_path
         )
 
-        # Step 18: Clean OS artifacts (93%)
+        # Step 20: Clean OS artifacts (93%)
         _progress(93, "Cleaning up...")
         report.os_artifacts_removed = remove_os_artifacts(work_dir)
 
-        # Step 19: Repackage (95%)
+        # Step 21: Repackage (95%)
         _progress(95, "Repackaging EPUB...")
         package_epub(work_dir, output_path)
 
-        # Step 20: Generate output filename
+        # Step 22: Generate output filename
         opf_tree = etree.parse(opf_path)
         final_metadata = extract_metadata(opf_tree)
         title = options.metadata_edits.get('title', final_metadata['title']) or final_metadata['title']
