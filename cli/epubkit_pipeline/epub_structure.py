@@ -28,7 +28,8 @@ NS_SVG = 'http://www.w3.org/2000/svg'
 NS_XLINK = 'http://www.w3.org/1999/xlink'
 NS_NCX = 'http://www.daisy.org/z3986/2005/ncx/'
 NS_EPUB = 'http://www.idpf.org/2007/ops'
-CROSSINK_LOCATION_MANIFEST_PATH = os.path.join('META-INF', 'crossink-locations.json')
+CROSSINK_LOCATION_MANIFEST_PATH = os.path.join('META-INF', 'x-locations.json')
+CROSSINK_OPTIMIZER_MANIFEST_PATH = os.path.join('META-INF', 'crossink', 'optimizer-v1.json')
 CROSSINK_LOCATION_WORDS_PER_UNIT = 64
 CROSSINK_REFERENCE_WORDS_PER_PAGE = 250
 
@@ -111,7 +112,7 @@ def _spine_hrefs(opf_path: str) -> list[str]:
 
 def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> tuple[int, int]:
     """
-    Write META-INF/crossink-locations.json with stable word-based EPUB locations.
+    Write META-INF/x-locations.json with stable word-based EPUB locations.
     Returns the generated location and reference page counts.
     """
     opf_dir = Path(opf_path).parent
@@ -152,7 +153,7 @@ def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> tuple[int,
         return 0, 0
 
     manifest = {
-        'format': 'crossink-locations',
+        'format': 'x-locations',
         'version': 1,
         'generator': 'auto-epub-optimizer-cli',
         'unit': 'word',
@@ -170,6 +171,48 @@ def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> tuple[int,
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(manifest, separators=(',', ':')), encoding='utf-8')
     return manifest['totalLocations'], manifest['totalReferencePages']
+
+
+def write_crossink_optimizer_manifest(epub_dir: str, opf_path: str, image_cache_entries: list[dict],
+                                      features=None) -> int:
+    """Write CrossInk's best-effort optimizer sidecar."""
+    epub_root = Path(epub_dir)
+    opf_dir = Path(opf_path).parent
+    spine = []
+
+    for index, href in enumerate(_spine_hrefs(opf_path)):
+        xhtml_path = opf_dir / href
+        word_count = 0
+        inflated_size = 0
+        if xhtml_path.exists():
+            word_count = _count_location_words(_extract_visible_text(str(xhtml_path)))
+            inflated_size = xhtml_path.stat().st_size
+        spine.append({
+            'index': index,
+            'href': str(xhtml_path.relative_to(epub_root).as_posix()) if xhtml_path.exists() else str(Path(href).as_posix()),
+            'wordCount': word_count,
+            'inflatedBytes': inflated_size,
+        })
+
+    manifest = {
+        'format': 'crossink-optimizer',
+        'version': 1,
+        'target': {
+            'device': 'xteink-x4',
+            'width': 800,
+            'height': 480,
+            'grayscaleLevels': 4,
+        },
+        'generator': 'auto-epub-optimizer-cli',
+        'features': features or {},
+        'spine': spine,
+        'images': image_cache_entries,
+    }
+
+    out_path = epub_root / CROSSINK_OPTIMIZER_MANIFEST_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(manifest, separators=(',', ':')), encoding='utf-8')
+    return len(image_cache_entries)
 
 
 def build_rename_map(epub_dir: str, processed_images: dict) -> dict:

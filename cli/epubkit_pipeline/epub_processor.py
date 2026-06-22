@@ -4,6 +4,7 @@ Orchestrates all processing steps and generates validation reports.
 """
 
 import os
+import hashlib
 import shutil
 import tempfile
 from pathlib import Path
@@ -33,7 +34,7 @@ from epub_structure import (
     build_rename_map, update_opf, update_opf_remove_fonts,
     update_xhtml_references, update_css_references,
     fix_svg_covers, fix_toc, find_content_files, add_image_to_opf,
-    write_crossink_location_manifest, remove_css_from_opf
+    write_crossink_location_manifest, write_crossink_optimizer_manifest, remove_css_from_opf
 )
 from section_splitter import split_long_spine_sections
 
@@ -95,6 +96,7 @@ class ProcessingReport:
     cover_generated: bool = False
     crossink_locations: int = 0
     crossink_reference_pages: int = 0
+    crossink_image_caches: int = 0
     # Details
     image_details: list = field(default_factory=list)
 
@@ -151,6 +153,9 @@ class ProcessingReport:
                 f"Generated {self.crossink_locations} CrossInk locations"
                 f" and {self.crossink_reference_pages} reference pages"
             )
+
+        if self.crossink_image_caches > 0:
+            parts.append(f"Prebuilt {self.crossink_image_caches} CrossInk image caches")
 
         if self.original_size > 0 and self.optimized_size > 0:
             reduction = (1 - self.optimized_size / self.original_size) * 100
@@ -231,6 +236,8 @@ def process_epub(input_path: str, output_path: str,
         image_files = content_files['images']
         report.images_total = len(image_files)
         processed_images = {}  # old_rel_path -> new_filename
+        image_cache_entries = []
+        pxc_dir = Path(work_dir) / 'META-INF' / 'crossink' / 'pxc'
 
         for i, img_path in enumerate(image_files):
             pct = 15 + int(45 * (i / max(len(image_files), 1)))
@@ -248,6 +255,7 @@ def process_epub(input_path: str, output_path: str,
             results = process_image(img_bytes, Path(img_path).name, image_options)
 
             for j, result in enumerate(results):
+                new_path = Path(img_path).parent / result.new_filename
                 if result.was_converted:
                     report.images_converted += 1
 
@@ -256,7 +264,6 @@ def process_epub(input_path: str, output_path: str,
                     report.image_formats[detail_key] = report.image_formats.get(detail_key, 0) + 1
 
                     # Write new file
-                    new_path = Path(img_path).parent / result.new_filename
                     with open(str(new_path), 'wb') as f:
                         f.write(result.output_bytes)
 
@@ -270,6 +277,19 @@ def process_epub(input_path: str, output_path: str,
                     processed_images[old_rel] = result.new_filename
 
                     report.image_details.append(result.details)
+
+                if result.pxc_bytes and result.width > 0 and result.height > 0:
+                    pxc_dir.mkdir(parents=True, exist_ok=True)
+                    source_key = f"{os.path.relpath(new_path, work_dir)}:{result.width}x{result.height}"
+                    pxc_name = hashlib.sha1(source_key.encode('utf-8')).hexdigest()[:20] + '.pxc'
+                    pxc_path = pxc_dir / pxc_name
+                    pxc_path.write_bytes(result.pxc_bytes)
+                    image_cache_entries.append({
+                        'href': Path(os.path.relpath(new_path, work_dir)).as_posix(),
+                        'pxc': Path(os.path.relpath(pxc_path, work_dir)).as_posix(),
+                        'width': result.width,
+                        'height': result.height,
+                    })
 
         # Step 8: Fix SVG covers (62%)
         _progress(62, "Fixing SVG covers...")
@@ -475,6 +495,12 @@ def process_epub(input_path: str, output_path: str,
         report.crossink_locations, report.crossink_reference_pages = write_crossink_location_manifest(
             work_dir, opf_path
         )
+        report.crossink_image_caches = write_crossink_optimizer_manifest(work_dir, opf_path, image_cache_entries, {
+            'htmlNormalized': True,
+            'cssFlattened': css_decision['enabled'],
+            'xLocations': True,
+            'prebuiltPxc': bool(image_cache_entries),
+        })
 
         # Step 20: Clean OS artifacts (93%)
         _progress(93, "Cleaning up...")

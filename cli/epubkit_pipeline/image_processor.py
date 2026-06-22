@@ -10,8 +10,10 @@ X4 specs (SSD1677 controller):
 """
 
 import io
+import struct
 from pathlib import Path
 from dataclasses import dataclass
+from typing import Optional
 
 from PIL import Image, ImageEnhance, ImageOps, ImageDraw, ImageFont
 
@@ -25,6 +27,12 @@ MAX_IMAGE_DIMENSION = 1024
 
 # SSD1677 supports 4-level grayscale: black, dark gray, light gray, white
 EINK_PALETTE_LEVELS = [0, 85, 170, 255]
+BAYER_4X4 = (
+    (0, 8, 2, 10),
+    (12, 4, 14, 6),
+    (3, 11, 1, 9),
+    (15, 7, 13, 5),
+)
 
 SUPPORTED_EXTENSIONS = {'.png', '.gif', '.webp', '.bmp', '.jpeg', '.jpg', '.tif', '.tiff'}
 
@@ -50,6 +58,9 @@ class ImageResult:
     new_size: int
     was_converted: bool
     details: str
+    width: int = 0
+    height: int = 0
+    pxc_bytes: Optional[bytes] = None
 
 
 def should_process(filename: str) -> bool:
@@ -82,6 +93,44 @@ def _encode_jpeg_bytes(img: Image.Image, quality: int, grayscale: bool) -> bytes
         subsampling=2 if grayscale else 0
     )
     return buffer.getvalue()
+
+
+def build_crossink_pxc_bytes(image_bytes: bytes) -> tuple[bytes, int, int]:
+    """Build CrossInk's 2-bit pixel cache: LE width/height, then 4 pixels per byte."""
+    img = Image.open(io.BytesIO(image_bytes)).convert('L')
+    width, height = img.size
+    pixels = img.load()
+    packed = bytearray(4 + ((width + 3) // 4) * height)
+    struct.pack_into('<HH', packed, 0, width, height)
+
+    out = 4
+    for y in range(height):
+        byte = 0
+        shift = 6
+        for x in range(width):
+            dither = (BAYER_4X4[y & 3][x & 3] - 8) * 5
+            gray = max(0, min(255, pixels[x, y] + dither))
+            if gray < 64:
+                level = 0
+            elif gray < 128:
+                level = 1
+            elif gray < 192:
+                level = 2
+            else:
+                level = 3
+            byte |= level << shift
+            if shift == 0:
+                packed[out] = byte
+                out += 1
+                byte = 0
+                shift = 6
+            else:
+                shift -= 2
+        if shift != 6:
+            packed[out] = byte
+            out += 1
+
+    return bytes(packed), width, height
 
 
 def _quantize_to_4_levels(img: Image.Image) -> Image.Image:
@@ -282,13 +331,17 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
         # If the original image is already a non-progressive JPEG and did not need
         # resizing for device constraints, keep it when re-encoding makes it bigger.
         if len(images) == 1 and original_is_safe_jpeg and not resized_for_device and len(output_bytes) > original_size:
+            pxc_bytes, width, height = build_crossink_pxc_bytes(image_bytes)
             results.append(ImageResult(
                 output_bytes=image_bytes,
                 new_filename=filename,
                 original_size=original_size,
                 new_size=original_size,
                 was_converted=False,
-                details="kept original JPEG (optimized version was larger)"
+                details="kept original JPEG (optimized version was larger)",
+                width=width,
+                height=height,
+                pxc_bytes=pxc_bytes,
             ))
             continue
 
@@ -299,13 +352,17 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
         else:
             new_filename = f"{stem}.jpg"
 
+        pxc_bytes, width, height = build_crossink_pxc_bytes(output_bytes)
         results.append(ImageResult(
             output_bytes=output_bytes,
             new_filename=new_filename,
             original_size=original_size if i == 0 else 0,
             new_size=len(output_bytes),
             was_converted=True,
-            details=", ".join(details_parts) if details_parts else "baseline JPEG"
+            details=", ".join(details_parts) if details_parts else "baseline JPEG",
+            width=width,
+            height=height,
+            pxc_bytes=pxc_bytes,
         ))
 
     return results
