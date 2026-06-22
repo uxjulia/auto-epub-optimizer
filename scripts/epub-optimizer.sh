@@ -76,6 +76,8 @@ process_drop_dir() {
     [ -n "$EPUB_NO_REMOVE_FONTS" ] && optimizer_args+=("--no-remove-fonts")
     [ -n "$EPUB_NO_REMOVE_CSS" ] && optimizer_args+=("--no-remove-css")
     [ -n "$EPUB_LIGHT_NOVEL" ] && optimizer_args+=("--light-novel")
+    [ -n "$EPUB_SPLIT_LONG_SECTIONS" ] && optimizer_args+=("--split-long-sections")
+    [ -n "$EPUB_SECTION_SPLIT_WORD_THRESHOLD" ] && optimizer_args+=("--section-split-word-threshold" "$EPUB_SECTION_SPLIT_WORD_THRESHOLD")
     [ -n "$EPUB_FILENAME_FORMAT" ] && optimizer_args+=("--filename-format" "$EPUB_FILENAME_FORMAT")
     [ -n "$EPUB_SUFFIX" ] && optimizer_args+=("--suffix=$EPUB_SUFFIX")
 

@@ -128,6 +128,8 @@ Edit `~/.config/epub-optimizer/.env`:
 | `EPUB_CONTRAST`        | Optional - set to `1` to enable contrast boost                                                                                     |
 | `EPUB_CONTRAST_FACTOR` | Optional contrast multiplier used when contrast boost is enabled, default `1.0`                                                     |
 | `EPUB_LIGHT_NOVEL`     | Optional - set to `1` to rotate/split landscape light-novel images                                                                 |
+| `EPUB_SPLIT_LONG_SECTIONS` | Optional - set to `1` to split oversized XHTML spine items into smaller reader sections                                         |
+| `EPUB_SECTION_SPLIT_WORD_THRESHOLD` | Optional visible-word threshold for `EPUB_SPLIT_LONG_SECTIONS`, default `2000`                                       |
 | `EPUB_FILENAME_FORMAT` | Optional output name pattern: `author-title`, `title-author`, or `title`                                                           |
 | `EPUB_SUFFIX`          | Optional suffix appended before `.epub`, e.g. `-optimized`                                                                         |
 
@@ -257,6 +259,8 @@ The output filename may be normalized from the EPUB's internal metadata or title
 | `--no-generate-cover`  | -              | Do not generate missing cover art         |
 | `--no-clean-metadata`  | -              | Keep store-specific metadata              |
 | `--no-text-cleanup`    | -              | Disable text cleanup                      |
+| `--split-long-sections` | -             | Split oversized XHTML spine items into smaller reader sections |
+| `--section-split-word-threshold <words>` | `2000` | Visible-word threshold used with `--split-long-sections` |
 | `--filename-format`    | `author-title` | Output filename pattern from metadata     |
 | `--suffix <str>`       | empty          | Suffix appended to output filename        |
 | `-v, --verbose`        | -              | Print progress and summary details        |
@@ -264,7 +268,7 @@ The output filename may be normalized from the EPUB's internal metadata or title
 
 ### Pipeline
 
-The Python CLI uses the copied `epubkit` pipeline in `cli/epubkit_pipeline/`. It checks for DRM, extracts the EPUB safely, converts images to X4-friendly JPEGs, fixes SVG covers, optionally generates a missing cover, repairs HTML, strips unnecessary attributes, removes unused CSS/fonts, normalizes text and whitespace, cleans store metadata, repairs or generates the TOC, removes OS artifacts, and repackages with the EPUB `mimetype` entry first.
+The Python CLI uses the copied `epubkit` pipeline in `cli/epubkit_pipeline/`. It checks for DRM, extracts the EPUB safely, converts images to X4-friendly JPEGs, fixes SVG covers, optionally generates a missing cover, repairs HTML, strips unnecessary attributes, removes unused CSS/fonts, normalizes text and whitespace, optionally splits very long XHTML spine items into smaller reader sections, cleans store metadata, repairs or generates the TOC, removes OS artifacts, and repackages with the EPUB `mimetype` entry first.
 
 ### Examples
 
@@ -283,4 +287,7 @@ python3 cli/optimize.py --filename-format=title-author book.epub
 
 # Faster cleanup that keeps CSS and embedded fonts
 python3 cli/optimize.py --no-remove-css --no-remove-fonts book.epub
+
+# Split very long chapters into smaller reader sections for CrossInk
+python3 cli/optimize.py --split-long-sections book.epub
 ```

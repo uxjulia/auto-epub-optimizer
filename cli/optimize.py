@@ -133,6 +133,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-text-cleanup", dest="text_cleanup", action="store_false", help="disable text cleanup")
     parser.add_argument("--keep-quotes", dest="normalize_quotes", action="store_false", help="do not normalize smart quotes")
     parser.add_argument(
+        "--split-long-sections",
+        action="store_true",
+        help="split oversized XHTML spine items into smaller EPUB sections",
+    )
+    parser.add_argument(
+        "--section-split-word-threshold",
+        type=int,
+        default=2000,
+        help="visible word threshold for --split-long-sections",
+    )
+    parser.add_argument(
         "--filename-format",
         choices=("author-title", "title-author", "title"),
         default="author-title",
@@ -177,6 +188,8 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         clean_metadata=args.clean_metadata,
         text_cleanup=args.text_cleanup,
         normalize_quotes=args.normalize_quotes,
+        split_long_sections=args.split_long_sections,
+        section_split_word_threshold=args.section_split_word_threshold,
         filename_format=args.filename_format,
     )
 
