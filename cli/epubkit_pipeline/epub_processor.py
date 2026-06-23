@@ -4,12 +4,14 @@ Orchestrates all processing steps and generates validation reports.
 """
 
 import os
+import re
 import hashlib
 import shutil
 import tempfile
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+from urllib.parse import unquote
 
 from lxml import etree
 
@@ -20,7 +22,8 @@ from metadata_handler import (
     extract_metadata, update_metadata, strip_store_metadata, format_filename
 )
 from html_cleaner import (
-    repair_html, remove_unused_css, collect_used_selectors,
+    repair_html, remove_unused_css, collect_used_selectors, collect_stylesheet_links,
+    remove_stylesheet_links,
     remove_embedded_fonts_from_css, find_font_files, normalize_whitespace,
     add_chapter_page_breaks, strip_unnecessary_attributes,
     build_crossink_css_plan, flatten_crossink_css_in_xhtml,
@@ -34,7 +37,8 @@ from epub_structure import (
     build_rename_map, update_opf, update_opf_remove_fonts,
     update_xhtml_references, update_css_references,
     fix_svg_covers, fix_toc, find_content_files, add_image_to_opf,
-    write_crossink_location_manifest, write_crossink_optimizer_manifest, remove_css_from_opf
+    write_crossink_location_manifest, write_crossink_optimizer_manifest,
+    remove_css_from_opf, remove_css_files_from_opf
 )
 from section_splitter import split_long_spine_sections
 
@@ -118,7 +122,7 @@ class ProcessingReport:
             parts.append(f"Flattened CSS into {self.css_elements_flattened} elements")
 
         if self.css_files_removed > 0:
-            parts.append(f"Removed {self.css_files_removed} flattened CSS files")
+            parts.append(f"Removed {self.css_files_removed} CSS files")
 
         if self.svg_covers_fixed > 0:
             parts.append(f"Fixed {self.svg_covers_fixed} SVG cover wrappers")
@@ -165,6 +169,176 @@ class ProcessingReport:
 
 
 ProgressCallback = Callable[[int, str], None]
+
+
+def _norm_path(path: Path | str) -> str:
+    return os.path.normcase(os.path.abspath(os.path.normpath(str(path))))
+
+
+def _resolve_local_href(base_path: str, href: str) -> str | None:
+    href = (href or '').split('#')[0].strip()
+    if not href or re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*:', href):
+        return None
+
+    return _norm_path(Path(base_path).parent / unquote(href))
+
+
+def _collect_css_imports(css_path: str, css_paths: set[str]) -> set[str]:
+    try:
+        css_text = Path(css_path).read_text(encoding='utf-8', errors='ignore')
+    except OSError:
+        return set()
+
+    imports = set()
+    for match in re.finditer(
+        r'@import\s+(?:url\(\s*)?[\'"]?([^\'")\s;]+)',
+        css_text,
+        flags=re.IGNORECASE,
+    ):
+        imported = _resolve_local_href(css_path, match.group(1))
+        if imported in css_paths:
+            imports.add(imported)
+
+    return imports
+
+
+def _remove_css_imports(css_path: str, css_paths_to_remove: set[str]) -> None:
+    try:
+        css_text = Path(css_path).read_text(encoding='utf-8', errors='ignore')
+    except OSError:
+        return
+
+    def replacer(match):
+        imported = _resolve_local_href(css_path, match.group(1))
+        return '' if imported in css_paths_to_remove else match.group(0)
+
+    cleaned = re.sub(
+        r'@import\s+(?:url\(\s*)?[\'"]?([^\'")\s;]+)[\'"]?\s*\)?[^;]*;',
+        replacer,
+        css_text,
+        flags=re.IGNORECASE,
+    )
+    if cleaned != css_text:
+        Path(css_path).write_text(cleaned, encoding='utf-8')
+
+
+def _merge_selector_sets(selector_sets: list[tuple[set, set, set]]) -> tuple[set, set, set]:
+    classes = set()
+    ids = set()
+    elements = set()
+    for used_classes, used_ids, used_elements in selector_sets:
+        classes.update(used_classes)
+        ids.update(used_ids)
+        elements.update(used_elements)
+    return classes, ids, elements
+
+
+def _tree_shake_css(content_files: dict, opf_path: str) -> tuple[int, int]:
+    css_paths = {
+        _norm_path(css_path): css_path
+        for css_path in content_files['css']
+        if os.path.exists(css_path)
+    }
+    if not css_paths:
+        return 0, 0
+
+    xhtml_selectors = {}
+    css_importers = {css_key: set() for css_key in css_paths}
+    xhtml_css_links = {}
+
+    for xhtml_path in content_files['xhtml']:
+        if not os.path.exists(xhtml_path):
+            continue
+
+        with open(xhtml_path, 'rb') as f:
+            xhtml_bytes = f.read()
+
+        xhtml_key = _norm_path(xhtml_path)
+        xhtml_selectors[xhtml_key] = collect_used_selectors(xhtml_bytes)
+
+        links = []
+        for href in collect_stylesheet_links(xhtml_bytes):
+            css_key = _resolve_local_href(xhtml_path, href)
+            if css_key in css_paths:
+                links.append((href, css_key))
+                css_importers[css_key].add(xhtml_key)
+        if links:
+            xhtml_css_links[xhtml_key] = links
+
+    css_imports = {
+        css_key: _collect_css_imports(css_path, set(css_paths))
+        for css_key, css_path in css_paths.items()
+    }
+    changed = True
+    while changed:
+        changed = False
+        for css_key, imported_keys in css_imports.items():
+            importers = css_importers[css_key]
+            if not importers:
+                continue
+            for imported_key in imported_keys:
+                before = len(css_importers[imported_key])
+                css_importers[imported_key].update(importers)
+                changed = changed or len(css_importers[imported_key]) != before
+
+    rules_removed = 0
+    css_files_to_remove = set()
+    for css_key, css_path in css_paths.items():
+        importer_keys = css_importers[css_key]
+        if not importer_keys:
+            css_files_to_remove.add(css_key)
+            continue
+
+        selector_sets = [
+            xhtml_selectors[xhtml_key]
+            for xhtml_key in importer_keys
+            if xhtml_key in xhtml_selectors
+        ]
+        used_classes, used_ids, used_elements = _merge_selector_sets(selector_sets)
+
+        with open(css_path, 'r', encoding='utf-8', errors='ignore') as f:
+            css_text = f.read()
+        cleaned, removed = remove_unused_css(css_text, used_classes, used_ids, used_elements)
+        rules_removed += removed
+        if removed > 0:
+            with open(css_path, 'w', encoding='utf-8') as f:
+                f.write(cleaned)
+        if not cleaned.strip():
+            css_files_to_remove.add(css_key)
+
+    if not css_files_to_remove:
+        return rules_removed, 0
+
+    for css_key, css_path in css_paths.items():
+        if css_key not in css_files_to_remove:
+            _remove_css_imports(css_path, css_files_to_remove)
+
+    for xhtml_path in content_files['xhtml']:
+        xhtml_key = _norm_path(xhtml_path)
+        hrefs_to_remove = {
+            href
+            for href, css_key in xhtml_css_links.get(xhtml_key, [])
+            if css_key in css_files_to_remove
+        }
+        if not hrefs_to_remove or not os.path.exists(xhtml_path):
+            continue
+
+        with open(xhtml_path, 'rb') as f:
+            xhtml_bytes = f.read()
+        cleaned, removed = remove_stylesheet_links(xhtml_bytes, hrefs_to_remove)
+        if removed > 0:
+            with open(xhtml_path, 'wb') as f:
+                f.write(cleaned)
+
+    removed_css_paths = [css_paths[css_key] for css_key in css_files_to_remove]
+    remove_css_files_from_opf(opf_path, removed_css_paths)
+    files_removed = 0
+    for css_path in removed_css_paths:
+        if os.path.exists(css_path):
+            os.unlink(css_path)
+            files_removed += 1
+
+    return rules_removed, files_removed
 
 
 def process_epub(input_path: str, output_path: str,
@@ -353,27 +527,9 @@ def process_epub(input_path: str, output_path: str,
         # Step 12: Remove unused CSS (74%)
         if options.remove_unused_css:
             _progress(76, "Removing unused CSS...")
-            # Collect all used selectors from XHTML files
-            all_classes = set()
-            all_ids = set()
-            all_elements = set()
-            for xhtml_path in content_files['xhtml']:
-                if os.path.exists(xhtml_path):
-                    with open(xhtml_path, 'rb') as f:
-                        classes, ids, elements = collect_used_selectors(f.read())
-                        all_classes.update(classes)
-                        all_ids.update(ids)
-                        all_elements.update(elements)
-
-            for css_path in content_files['css']:
-                if os.path.exists(css_path):
-                    with open(css_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        css_text = f.read()
-                    cleaned, removed = remove_unused_css(css_text, all_classes, all_ids, all_elements)
-                    report.css_rules_removed += removed
-                    if removed > 0:
-                        with open(css_path, 'w', encoding='utf-8') as f:
-                            f.write(cleaned)
+            css_rules_removed, css_files_removed = _tree_shake_css(content_files, opf_path)
+            report.css_rules_removed += css_rules_removed
+            report.css_files_removed += css_files_removed
 
         # Step 13: Remove embedded fonts (80%)
         if options.remove_fonts:

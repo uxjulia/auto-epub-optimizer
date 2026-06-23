@@ -324,6 +324,45 @@ def remove_css_from_opf(opf_path: str) -> int:
     return removed
 
 
+def remove_css_files_from_opf(opf_path: str, css_files: list[str]) -> int:
+    """Remove specific CSS stylesheet entries from the OPF manifest."""
+    tree = etree.parse(opf_path)
+    root = tree.getroot()
+
+    manifest = _find_element(root, 'manifest')
+    if manifest is None:
+        return 0
+
+    opf_dir = Path(opf_path).parent
+    css_targets = {
+        os.path.normcase(os.path.abspath(os.path.normpath(path)))
+        for path in css_files
+    }
+
+    removed = 0
+    to_remove = []
+    for item in manifest:
+        if not _is_element(item):
+            continue
+        href = unquote(item.get('href', '').split('#')[0])
+        media_type = item.get('media-type', '').lower()
+        if media_type != 'text/css' and not href.lower().endswith('.css'):
+            continue
+
+        item_path = os.path.normcase(os.path.abspath(os.path.normpath(opf_dir / href)))
+        if item_path in css_targets:
+            to_remove.append(item)
+
+    for item in to_remove:
+        manifest.remove(item)
+        removed += 1
+
+    if removed > 0:
+        tree.write(opf_path, xml_declaration=True, encoding='utf-8', pretty_print=True)
+
+    return removed
+
+
 def add_image_to_opf(opf_path: str, image_href: str, image_id: str) -> None:
     """Add a new image entry to the OPF manifest."""
     tree = etree.parse(opf_path)

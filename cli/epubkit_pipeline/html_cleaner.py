@@ -113,34 +113,95 @@ def remove_unused_css(css_text: str, used_classes: set, used_ids: set, used_elem
 
 def _selector_matches_used(selector_text: str, used_classes: set, used_ids: set, used_elements: set) -> bool:
     """Check if a CSS selector potentially matches any used classes, IDs, or elements."""
-    # Always keep universal selectors, pseudo-elements, @-rules
+    # Always keep broad document selectors.
     if selector_text.strip() in ('*', 'html', 'body'):
         return True
 
-    # Split compound selectors
     selectors = re.split(r'\s*,\s*', selector_text)
 
     for sel in selectors:
-        # Extract classes
         classes = re.findall(r'\.([a-zA-Z_][\w-]*)', sel)
-        if classes and any(c in used_classes for c in classes):
-            return True
-
-        # Extract IDs
         ids = re.findall(r'#([a-zA-Z_][\w-]*)', sel)
-        if ids and any(i in used_ids for i in ids):
+
+        if classes or ids:
+            classes_match = all(c in used_classes for c in classes)
+            ids_match = all(i in used_ids for i in ids)
+            if classes_match and ids_match:
+                return True
+            continue
+
+        # Keep pseudo-class/element rules and attribute selectors when there is
+        # no class/id anchor to prove them dead.
+        if '::' in sel or ':' in sel or '[' in sel:
             return True
 
-        # Extract element names
         elements = re.findall(r'(?:^|[\s>+~])([a-zA-Z][\w-]*)', sel.strip())
         if elements and any(e.lower() in used_elements for e in elements):
             return True
 
-        # Keep pseudo-class/element rules and attribute selectors
-        if '::' in sel or ':' in sel or '[' in sel:
-            return True
-
     return False
+
+
+def collect_stylesheet_links(xhtml_bytes: bytes) -> list[str]:
+    """Return stylesheet hrefs referenced by XHTML <link> elements."""
+    try:
+        parser = etree.HTMLParser(recover=True)
+        tree = etree.fromstring(xhtml_bytes, parser)
+    except Exception:
+        return []
+
+    links = []
+    for el in tree.iter():
+        tag = el.tag
+        if not isinstance(tag, str):
+            continue
+        tag = tag.split('}')[-1] if '}' in tag else tag
+        if tag.lower() != 'link':
+            continue
+
+        href = el.get('href', '')
+        rel = el.get('rel', '').lower().split()
+        link_type = el.get('type', '').lower()
+        if href and ('stylesheet' in rel or link_type == 'text/css'):
+            links.append(href)
+
+    return links
+
+
+def remove_stylesheet_links(xhtml_bytes: bytes, hrefs_to_remove: set[str]) -> tuple[bytes, int]:
+    """Remove XHTML stylesheet links whose raw href is in hrefs_to_remove."""
+    if not hrefs_to_remove:
+        return xhtml_bytes, 0
+
+    try:
+        parser = etree.HTMLParser(recover=True)
+        tree = etree.fromstring(xhtml_bytes, parser)
+    except Exception:
+        return xhtml_bytes, 0
+
+    removed = 0
+    for el in list(tree.iter()):
+        tag = el.tag
+        if not isinstance(tag, str):
+            continue
+        tag = tag.split('}')[-1] if '}' in tag else tag
+        if tag.lower() != 'link':
+            continue
+
+        href = el.get('href', '')
+        rel = el.get('rel', '').lower().split()
+        link_type = el.get('type', '').lower()
+        if href in hrefs_to_remove and ('stylesheet' in rel or link_type == 'text/css'):
+            parent = el.getparent()
+            if parent is not None:
+                parent.remove(el)
+                removed += 1
+
+    if removed == 0:
+        return xhtml_bytes, 0
+
+    result = etree.tostring(tree, encoding='unicode', pretty_print=True)
+    return result.encode('utf-8'), removed
 
 
 def collect_used_selectors(xhtml_bytes: bytes) -> tuple[set, set, set]:
