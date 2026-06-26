@@ -119,8 +119,10 @@ def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> tuple[int,
     spine = []
     total_words = 0
     next_location = 1
+    spine_hrefs = list(_spine_hrefs(opf_path))
+    chapter_group_data = _chapter_groups(opf_dir, spine_hrefs)
 
-    for index, href in enumerate(_spine_hrefs(opf_path)):
+    for index, href in enumerate(spine_hrefs):
         xhtml_path = opf_dir / href
         word_count = 0
         if xhtml_path.exists():
@@ -144,6 +146,7 @@ def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> tuple[int,
             'endLocation': end_location,
             'startReferencePage': start_reference_page,
             'endReferencePage': end_reference_page,
+            'chapterGroup': chapter_group_data['group_by_href'].get(href, index),
         })
 
         total_words += word_count
@@ -165,12 +168,56 @@ def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> tuple[int,
             total_words + CROSSINK_REFERENCE_WORDS_PER_PAGE - 1
         ) // CROSSINK_REFERENCE_WORDS_PER_PAGE,
         'spine': spine,
+        'chapterGroups': chapter_group_data['groups'],
     }
 
     out_path = Path(epub_dir) / CROSSINK_LOCATION_MANIFEST_PATH
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(manifest, separators=(',', ':')), encoding='utf-8')
     return manifest['totalLocations'], manifest['totalReferencePages']
+
+
+def _chapter_groups(opf_dir: Path, spine_hrefs: list[str]) -> dict:
+    groups_by_href = {}
+    total_words = 0
+
+    for spine_index, href in enumerate(spine_hrefs):
+        chapter_href = _original_chapter_href(href)
+        xhtml_path = opf_dir / href
+        word_count = 0
+        if xhtml_path.exists():
+            word_count = _count_location_words(_extract_visible_text(str(xhtml_path)))
+
+        group = groups_by_href.setdefault(chapter_href, {
+            'href': chapter_href,
+            'startSpineIndex': spine_index,
+            'endSpineIndex': spine_index,
+            'wordStart': total_words,
+            'wordCount': 0,
+        })
+        group['endSpineIndex'] = spine_index
+        group['wordCount'] += word_count
+        total_words += word_count
+
+    group_by_href = {}
+    groups = []
+    for index, group in enumerate(groups_by_href.values()):
+        for spine_index in range(group['startSpineIndex'], group['endSpineIndex'] + 1):
+            group_by_href[spine_hrefs[spine_index]] = index
+        group['index'] = index
+        group['startReferencePage'] = (
+            group['wordStart'] // CROSSINK_REFERENCE_WORDS_PER_PAGE
+        ) + 1 if group['wordCount'] > 0 else 0
+        group['endReferencePage'] = (
+            group['wordStart'] + group['wordCount'] + CROSSINK_REFERENCE_WORDS_PER_PAGE - 1
+        ) // CROSSINK_REFERENCE_WORDS_PER_PAGE if group['wordCount'] > 0 else 0
+        groups.append(group)
+
+    return {'groups': groups, 'group_by_href': group_by_href}
+
+
+def _original_chapter_href(href: str) -> str:
+    return re.sub(r'__ci_section_\d+(?=\.[^/.]+$)', '', href)
 
 
 def write_crossink_optimizer_manifest(epub_dir: str, opf_path: str, image_cache_entries: list[dict],

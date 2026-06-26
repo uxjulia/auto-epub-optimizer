@@ -964,6 +964,7 @@
         if (spineHrefs.length === 0) return null;
 
         const spine = [];
+        const chapterGroups = buildCrossInkLocationChapterGroups(spineHrefs, xhtmlFiles);
         let totalWords = 0;
         let nextLocation = 1;
 
@@ -997,6 +998,9 @@
             endLocation,
             startReferencePage,
             endReferencePage,
+            chapterGroup: chapterGroups.groupByHref.has(href)
+              ? chapterGroups.groupByHref.get(href)
+              : index,
           });
 
           totalWords += wordCount;
@@ -1016,7 +1020,62 @@
             totalWords / CROSSINK_REFERENCE_WORDS_PER_PAGE,
           ),
           spine,
+          chapterGroups: chapterGroups.groups,
         };
+      }
+
+      function buildCrossInkLocationChapterGroups(spineHrefs, xhtmlFiles) {
+        const byChapterHref = new Map();
+        const groupByHref = new Map();
+        let totalWords = 0;
+
+        for (let spineIndex = 0; spineIndex < spineHrefs.length; spineIndex++) {
+          const href = spineHrefs[spineIndex];
+          const chapterHref = originalCrossInkLocationChapterHref(href);
+          const content = resolveXhtmlContentForLocation(href, xhtmlFiles);
+          const wordCount = content
+            ? countLocationWords(extractLocationText(content))
+            : 0;
+          const group = byChapterHref.get(chapterHref) || {
+            href: chapterHref,
+            startSpineIndex: spineIndex,
+            endSpineIndex: spineIndex,
+            wordStart: totalWords,
+            wordCount: 0,
+          };
+          group.endSpineIndex = spineIndex;
+          group.wordCount += wordCount;
+          byChapterHref.set(chapterHref, group);
+          totalWords += wordCount;
+        }
+
+        const groups = Array.from(byChapterHref.values()).map((group, index) => {
+          for (let spineIndex = group.startSpineIndex; spineIndex <= group.endSpineIndex; spineIndex++) {
+            groupByHref.set(spineHrefs[spineIndex], index);
+          }
+          return {
+            index,
+            href: group.href,
+            startSpineIndex: group.startSpineIndex,
+            endSpineIndex: group.endSpineIndex,
+            wordStart: group.wordStart,
+            wordCount: group.wordCount,
+            startReferencePage:
+              group.wordCount > 0
+                ? Math.floor(group.wordStart / CROSSINK_REFERENCE_WORDS_PER_PAGE) + 1
+                : 0,
+            endReferencePage:
+              group.wordCount > 0
+                ? Math.ceil((group.wordStart + group.wordCount) / CROSSINK_REFERENCE_WORDS_PER_PAGE)
+                : 0,
+          };
+        });
+
+        return { groups, groupByHref };
+      }
+
+      function originalCrossInkLocationChapterHref(href) {
+        return href.replace(/__ci_section_\d+(?=\.[^/.]+$)/, "");
       }
 
       function stripCssComments(cssText) {
