@@ -19,6 +19,7 @@ from epub_processor import ProcessingOptions, process_epub  # noqa: E402
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    normalize_legacy_args(parser, args)
 
     inputs = resolve_inputs(args.inputs)
     if not inputs:
@@ -107,7 +108,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o", "--output", default="./optimized", help="output directory")
     parser.add_argument("-q", "--quality", type=bounded_int(1, 100), default=70, help="JPEG quality 1-100")
     parser.add_argument("--no-grayscale", dest="grayscale", action="store_false", help="disable grayscale conversion")
-    parser.add_argument("--contrast", dest="contrast_boost", action="store_true", help="enable contrast boost")
+    parser.add_argument(
+        "--contrast",
+        dest="contrast_arg",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="CONTRAST_FACTOR",
+        help="enable contrast boost; optionally pass a factor for backward compatibility",
+    )
+    parser.add_argument(
+        "--no-contrast",
+        dest="contrast_arg",
+        action="store_const",
+        const="__DISABLED__",
+        help="disable contrast boost (legacy compatibility flag)",
+    )
     parser.add_argument(
         "-c",
         "--contrast-factor",
@@ -170,7 +186,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.set_defaults(
         grayscale=True,
-        contrast_boost=False,
         eink_quantize=True,
         remove_fonts=True,
         remove_css=True,
@@ -182,6 +197,27 @@ def build_parser() -> argparse.ArgumentParser:
         normalize_ellipsis=True,
     )
     return parser
+
+
+def normalize_legacy_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    contrast_arg = getattr(args, "contrast_arg", None)
+    args.contrast_boost = False
+
+    if contrast_arg is None:
+        return
+
+    if contrast_arg == "__DISABLED__":
+        args.contrast_factor = 1.0
+        return
+
+    args.contrast_boost = True
+    if contrast_arg == "":
+        return
+
+    try:
+        args.contrast_factor = float(contrast_arg)
+    except ValueError:
+        parser.error(f"argument --contrast: invalid float value: {contrast_arg!r}")
 
 
 def build_options(args: argparse.Namespace) -> ProcessingOptions:

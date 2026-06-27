@@ -70,7 +70,14 @@ process_drop_dir() {
     [ -n "$EPUB_QUALITY" ] && optimizer_args+=("--quality" "$EPUB_QUALITY")
     [ -n "$EPUB_MAX_WIDTH" ] && optimizer_args+=("--max-width" "$EPUB_MAX_WIDTH")
     [ -n "$EPUB_MAX_HEIGHT" ] && optimizer_args+=("--max-height" "$EPUB_MAX_HEIGHT")
-    [ -n "$EPUB_CONTRAST" ] && optimizer_args+=("--contrast")
+    if [ -n "$EPUB_NO_CONTRAST" ]; then
+      optimizer_args+=("--no-contrast")
+    elif [ -n "$EPUB_CONTRAST" ]; then
+      optimizer_args+=("--contrast")
+      if [ -z "$EPUB_CONTRAST_FACTOR" ] && [ "$EPUB_CONTRAST" != "1" ]; then
+        optimizer_args+=("--contrast-factor" "$EPUB_CONTRAST")
+      fi
+    fi
     [ -n "$EPUB_CONTRAST_FACTOR" ] && optimizer_args+=("--contrast-factor" "$EPUB_CONTRAST_FACTOR")
     [ -n "$EPUB_NO_GRAYSCALE" ] && optimizer_args+=("--no-grayscale")
     [ -n "$EPUB_NO_REMOVE_FONTS" ] && optimizer_args+=("--no-remove-fonts")
