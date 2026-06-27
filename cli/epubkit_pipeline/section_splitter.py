@@ -16,6 +16,9 @@ NS_OPF = 'http://www.idpf.org/2007/opf'
 NS_XHTML = 'http://www.w3.org/1999/xhtml'
 XHTML_MEDIA_TYPES = {'application/xhtml+xml', 'text/html'}
 HREF_ATTRS = {'href', 'src', '{http://www.w3.org/1999/xlink}href'}
+ORPHAN_INTRO_WORD_LIMIT = 50
+HEADING_TAGS = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
+MEDIA_TAGS = {'audio', 'canvas', 'embed', 'iframe', 'image', 'img', 'object', 'picture', 'svg', 'video'}
 
 
 @dataclass
@@ -146,6 +149,10 @@ def _split_xhtml_file(path: Path, word_threshold: int) -> _SplitResult:
         if not split_chain:
             return _SplitResult([path], {})
         body_nodes = list(split_chain[-1])
+    else:
+        split_chain = _find_intro_split_chain(body, body_nodes, word_threshold)
+        if split_chain:
+            body_nodes = list(split_chain[-1])
 
     chunks: list[list[etree._Element]] = []
     current: list[etree._Element] = []
@@ -162,6 +169,8 @@ def _split_xhtml_file(path: Path, word_threshold: int) -> _SplitResult:
 
     if current:
         chunks.append(current)
+
+    chunks = _merge_orphan_intro_chunks(chunks, word_threshold)
 
     if len(chunks) <= 1:
         return _SplitResult([path], {})
@@ -235,6 +244,88 @@ def _find_split_chain(body, word_threshold: int) -> list[etree._Element]:
         node = node.getparent()
     chain.reverse()
     return chain
+
+
+def _find_intro_split_chain(body, body_nodes: list[etree._Element], word_threshold: int) -> list[etree._Element]:
+    for index, node in enumerate(body_nodes):
+        if _node_word_count(node) <= word_threshold or len(list(node)) <= 1:
+            continue
+        preceding = body_nodes[:index]
+        following = body_nodes[index + 1:]
+        if not preceding or not _is_orphan_intro_chunk(preceding, word_threshold):
+            continue
+        if following and not _all_decorative(following):
+            continue
+        return _find_split_chain_within(body, node, word_threshold)
+    return []
+
+
+def _find_split_chain_within(body, start, word_threshold: int) -> list[etree._Element]:
+    best = None
+    best_child_count = 0
+    for node in start.iter():
+        if not _is_element(node):
+            continue
+        child_count = len(list(node))
+        if child_count <= best_child_count or _node_word_count(node) <= word_threshold:
+            continue
+        best = node
+        best_child_count = child_count
+
+    if best is None:
+        return []
+
+    chain: list[etree._Element] = []
+    node = best
+    while node is not None and node is not body:
+        chain.append(node)
+        node = node.getparent()
+    chain.reverse()
+    return chain
+
+
+def _merge_orphan_intro_chunks(chunks: list[list[etree._Element]], word_threshold: int) -> list[list[etree._Element]]:
+    if len(chunks) <= 1:
+        return chunks
+
+    merged: list[list[etree._Element]] = []
+    index = 0
+    while index < len(chunks):
+        chunk = chunks[index]
+        if index < len(chunks) - 1 and _is_orphan_intro_chunk(chunk, word_threshold):
+            chunks[index + 1] = chunk + chunks[index + 1]
+        elif index == len(chunks) - 1 and merged and _is_orphan_intro_chunk(chunk, word_threshold):
+            merged[-1].extend(chunk)
+        else:
+            merged.append(chunk)
+        index += 1
+    return merged
+
+
+def _is_orphan_intro_chunk(nodes: list[etree._Element], word_threshold: int) -> bool:
+    words = sum(_node_word_count(node) for node in nodes)
+    if words > _intro_word_limit(word_threshold):
+        return False
+    return words == 0 or any(_contains_heading_or_media(node) for node in nodes)
+
+
+def _intro_word_limit(word_threshold: int) -> int:
+    return max(1, min(ORPHAN_INTRO_WORD_LIMIT, word_threshold // 20))
+
+
+def _contains_heading_or_media(node) -> bool:
+    if not _is_element(node):
+        return False
+    for el in node.iter():
+        if not _is_element(el):
+            continue
+        if _local_name(el.tag).lower() in HEADING_TAGS or _local_name(el.tag).lower() in MEDIA_TAGS:
+            return True
+    return False
+
+
+def _all_decorative(nodes: list[etree._Element]) -> bool:
+    return all(_node_word_count(node) == 0 and not _contains_heading_or_media(node) for node in nodes)
 
 
 def _anchors_in_node(node) -> set[str]:
