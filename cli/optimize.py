@@ -39,7 +39,8 @@ def main() -> int:
         f"{args.max_width}x{args.max_height} | "
         f"remove_fonts={args.remove_fonts} | "
         f"clean_css={args.remove_css} | "
-        f"text_cleanup={args.text_cleanup}"
+        f"text_cleanup={args.text_cleanup} | "
+        f"words_per_reference_page={args.words_per_reference_page}"
     )
     print("")
 
@@ -144,8 +145,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--section-split-word-threshold",
         type=int,
-        default=2000,
+        default=6000,
         help="visible word threshold for --split-long-sections",
+    )
+    parser.add_argument(
+        "--words-per-reference-page",
+        type=bounded_int(1, 10000),
+        default=275,
+        help="word count used for generated CrossInk reference pages",
     )
     parser.add_argument(
         "--filename-format",
@@ -198,6 +205,7 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         normalize_ellipsis=args.normalize_ellipsis,
         split_long_sections=args.split_long_sections,
         section_split_word_threshold=args.section_split_word_threshold,
+        words_per_reference_page=args.words_per_reference_page,
         filename_format=args.filename_format,
     )
 

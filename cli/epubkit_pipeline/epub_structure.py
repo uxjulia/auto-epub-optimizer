@@ -31,7 +31,7 @@ NS_EPUB = 'http://www.idpf.org/2007/ops'
 CROSSINK_LOCATION_MANIFEST_PATH = os.path.join('META-INF', 'x-locations.json')
 CROSSINK_OPTIMIZER_MANIFEST_PATH = os.path.join('META-INF', 'crossink', 'optimizer-v1.json')
 CROSSINK_LOCATION_WORDS_PER_UNIT = 64
-CROSSINK_REFERENCE_WORDS_PER_PAGE = 250
+DEFAULT_CROSSINK_REFERENCE_WORDS_PER_PAGE = 275
 
 
 def _is_element(node):
@@ -110,17 +110,19 @@ def _spine_hrefs(opf_path: str) -> list[str]:
     return hrefs
 
 
-def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> tuple[int, int]:
+def write_crossink_location_manifest(epub_dir: str, opf_path: str,
+                                     words_per_reference_page: int = DEFAULT_CROSSINK_REFERENCE_WORDS_PER_PAGE) -> tuple[int, int]:
     """
     Write META-INF/x-locations.json with stable word-based EPUB locations.
     Returns the generated location and reference page counts.
     """
+    words_per_reference_page = max(1, int(words_per_reference_page or DEFAULT_CROSSINK_REFERENCE_WORDS_PER_PAGE))
     opf_dir = Path(opf_path).parent
     spine = []
     total_words = 0
     next_location = 1
     spine_hrefs = list(_spine_hrefs(opf_path))
-    chapter_group_data = _chapter_groups(opf_dir, spine_hrefs)
+    chapter_group_data = _chapter_groups(opf_dir, spine_hrefs, words_per_reference_page)
 
     for index, href in enumerate(spine_hrefs):
         xhtml_path = opf_dir / href
@@ -131,9 +133,9 @@ def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> tuple[int,
         location_count = (word_count + CROSSINK_LOCATION_WORDS_PER_UNIT - 1) // CROSSINK_LOCATION_WORDS_PER_UNIT
         start_location = next_location if location_count > 0 else 0
         end_location = next_location + location_count - 1 if location_count > 0 else 0
-        start_reference_page = (total_words // CROSSINK_REFERENCE_WORDS_PER_PAGE) + 1 if word_count > 0 else 0
+        start_reference_page = (total_words // words_per_reference_page) + 1 if word_count > 0 else 0
         end_reference_page = (
-            (total_words + word_count + CROSSINK_REFERENCE_WORDS_PER_PAGE - 1) // CROSSINK_REFERENCE_WORDS_PER_PAGE
+            (total_words + word_count + words_per_reference_page - 1) // words_per_reference_page
             if word_count > 0 else 0
         )
 
@@ -161,12 +163,12 @@ def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> tuple[int,
         'generator': 'auto-epub-optimizer-cli',
         'unit': 'word',
         'wordsPerLocation': CROSSINK_LOCATION_WORDS_PER_UNIT,
-        'wordsPerReferencePage': CROSSINK_REFERENCE_WORDS_PER_PAGE,
+        'wordsPerReferencePage': words_per_reference_page,
         'totalWords': total_words,
         'totalLocations': max(0, next_location - 1),
         'totalReferencePages': (
-            total_words + CROSSINK_REFERENCE_WORDS_PER_PAGE - 1
-        ) // CROSSINK_REFERENCE_WORDS_PER_PAGE,
+            total_words + words_per_reference_page - 1
+        ) // words_per_reference_page,
         'spine': spine,
         'chapterGroups': chapter_group_data['groups'],
     }
@@ -177,7 +179,7 @@ def write_crossink_location_manifest(epub_dir: str, opf_path: str) -> tuple[int,
     return manifest['totalLocations'], manifest['totalReferencePages']
 
 
-def _chapter_groups(opf_dir: Path, spine_hrefs: list[str]) -> dict:
+def _chapter_groups(opf_dir: Path, spine_hrefs: list[str], words_per_reference_page: int) -> dict:
     groups_by_href = {}
     total_words = 0
 
@@ -206,11 +208,11 @@ def _chapter_groups(opf_dir: Path, spine_hrefs: list[str]) -> dict:
             group_by_href[spine_hrefs[spine_index]] = index
         group['index'] = index
         group['startReferencePage'] = (
-            group['wordStart'] // CROSSINK_REFERENCE_WORDS_PER_PAGE
+            group['wordStart'] // words_per_reference_page
         ) + 1 if group['wordCount'] > 0 else 0
         group['endReferencePage'] = (
-            group['wordStart'] + group['wordCount'] + CROSSINK_REFERENCE_WORDS_PER_PAGE - 1
-        ) // CROSSINK_REFERENCE_WORDS_PER_PAGE if group['wordCount'] > 0 else 0
+            group['wordStart'] + group['wordCount'] + words_per_reference_page - 1
+        ) // words_per_reference_page if group['wordCount'] > 0 else 0
         groups.append(group)
 
     return {'groups': groups, 'group_by_href': group_by_href}

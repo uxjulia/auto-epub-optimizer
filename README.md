@@ -130,8 +130,9 @@ Edit `~/.config/epub-optimizer/.env`:
 | `EPUB_CONTRAST`        | Optional - set to `1` to enable contrast boost                                                                                     |
 | `EPUB_CONTRAST_FACTOR` | Optional contrast multiplier used when contrast boost is enabled, default `1.0`                                                     |
 | `EPUB_LIGHT_NOVEL`     | Optional - set to `1` to rotate/split landscape light-novel images                                                                 |
+| `EPUB_WORDS_PER_REFERENCE_PAGE` | Optional word count used for generated CrossInk reference pages, default `275`                                             |
 | `EPUB_SPLIT_LONG_SECTIONS` | Optional - set to `1` to split oversized XHTML spine items into smaller reader sections                                         |
-| `EPUB_SECTION_SPLIT_WORD_THRESHOLD` | Optional visible-word threshold for `EPUB_SPLIT_LONG_SECTIONS`, default `2000`                                       |
+| `EPUB_SECTION_SPLIT_WORD_THRESHOLD` | Optional visible-word threshold for `EPUB_SPLIT_LONG_SECTIONS`, default `6000`                                       |
 | `EPUB_FILENAME_FORMAT` | Optional output name pattern: `author-title`, `title-author`, or `title`                                                           |
 | `EPUB_SUFFIX`          | Optional suffix appended before `.epub`, e.g. `-optimized`                                                                         |
 
@@ -220,7 +221,7 @@ This browser page uses the older JavaScript-only optimizer. The automated watche
 2. Adjust settings if needed
 3. Click **Optimize & Download**
 
-Main browser settings: JPEG quality, max width/height, split mode, overlap, rotation, and grayscale. Cover contrast enhancement runs automatically.
+Main browser settings: JPEG quality, reference-page word count, max width/height, split mode, overlap, rotation, and grayscale. Cover contrast enhancement runs automatically.
 
 ---
 
@@ -265,7 +266,8 @@ The output filename may be normalized from the EPUB's internal metadata or title
 | `--normalize-dashes`   | -              | Convert em/en dashes to ASCII dashes      |
 | `--no-normalize-ellipsis` | -           | Keep ellipsis characters unchanged        |
 | `--split-long-sections` | -             | Split oversized XHTML spine items into smaller reader sections |
-| `--section-split-word-threshold <words>` | `2000` | Visible-word threshold used with `--split-long-sections` |
+| `--section-split-word-threshold <words>` | `6000` | Visible-word threshold used with `--split-long-sections` |
+| `--words-per-reference-page <words>` | `275` | Word count used for generated CrossInk reference pages |
 | `--filename-format`    | `author-title` | Output filename pattern from metadata     |
 | `--suffix <str>`       | empty          | Suffix appended to output filename        |
 | `-v, --verbose`        | -              | Print progress and summary details        |

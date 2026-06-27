@@ -64,7 +64,8 @@ class ProcessingOptions:
     normalize_dashes: bool = False
     normalize_ellipsis: bool = True
     split_long_sections: bool = False
-    section_split_word_threshold: int = 2000
+    section_split_word_threshold: int = 6000
+    words_per_reference_page: int = 275
     filename_format: str = 'author-title'
     # Metadata edits (applied if non-empty)
     metadata_edits: dict = field(default_factory=dict)
@@ -649,7 +650,7 @@ def process_epub(input_path: str, output_path: str,
         # Step 19: Generate CrossInk location sidecar (92%)
         _progress(92, "Generating CrossInk locations...")
         report.crossink_locations, report.crossink_reference_pages = write_crossink_location_manifest(
-            work_dir, opf_path
+            work_dir, opf_path, options.words_per_reference_page
         )
         report.crossink_image_caches = write_crossink_optimizer_manifest(work_dir, opf_path, image_cache_entries, {
             'htmlNormalized': True,
