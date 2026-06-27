@@ -3,8 +3,6 @@ Metadata handler for Xteink X4 EPUB Optimizer.
 Handles: metadata extraction, cleanup, cover detection, filename formatting.
 """
 
-import re
-import unicodedata
 from pathlib import Path
 from typing import Optional
 
@@ -310,22 +308,5 @@ def format_filename(title: str, author: str, filename_format: str = 'author-titl
 
 def _sanitize_filename(name: str) -> str:
     """Remove characters that are problematic in filenames."""
-    # Replace common problematic chars
-    replacements = {
-        '/': '-', '\\': '-', ':': ' -', '*': '', '?': '',
-        '"': "'", '<': '', '>': '', '|': '-',
-    }
-    for old, new in replacements.items():
-        name = name.replace(old, new)
-
-    # Normalize unicode
-    name = unicodedata.normalize('NFC', name)
-
-    # Remove control characters
-    name = re.sub(r'[\x00-\x1f\x7f]', '', name)
-
-    # Collapse multiple spaces/dashes
-    name = re.sub(r'\s+', ' ', name)
-    name = re.sub(r'-{2,}', '-', name)
-
-    return name.strip()
+    name = ''.join(' ' if ch in '<>:"/\\|?*' or ord(ch) < 32 else ch for ch in name)
+    return ' '.join(name.split()).strip()

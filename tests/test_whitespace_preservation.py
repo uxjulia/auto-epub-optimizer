@@ -93,6 +93,18 @@ class WhitespacePreservationTests(unittest.TestCase):
             "My Book.epub",
         )
 
+    def test_format_filename_preserves_apostrophes_like_browser(self):
+        self.assertEqual(
+            format_filename("My Book", "O'Brian", "title-author"),
+            "My Book - O'Brian.epub",
+        )
+
+    def test_format_filename_replaces_browser_invalid_characters(self):
+        self.assertEqual(
+            format_filename('A/B:C*D?E"F<G>H|I', "Jane Doe", "title-author"),
+            "A B C D E F G H I - Jane Doe.epub",
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

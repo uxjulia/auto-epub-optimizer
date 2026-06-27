@@ -666,17 +666,22 @@ def strip_unnecessary_attributes(xhtml_bytes: bytes) -> tuple[bytes, int]:
         if not isinstance(el.tag, str):
             continue
 
+        is_pagebreak_marker = _is_pagebreak_marker(el)
         attrs_to_remove = []
         for attr in el.attrib:
             # Get local attribute name (strip namespace)
             attr_local = attr.split('}')[-1] if '}' in attr else attr
+            attr_name = attr_local.lower()
 
             # Skip namespace declarations
             if attr.startswith('{') and attr_local in ('xmlns',):
                 continue
 
+            if is_pagebreak_marker and attr_name in ('aria-label', 'role', 'epub:type'):
+                continue
+
             # Check if it's a kept attribute
-            if attr_local.lower() in KEEP_ATTRS:
+            if attr_name in KEEP_ATTRS:
                 continue
 
             # Check for namespace-prefixed essential attrs (xlink:href etc)
@@ -684,16 +689,16 @@ def strip_unnecessary_attributes(xhtml_bytes: bytes) -> tuple[bytes, int]:
                 continue
 
             # Strip known-useless prefixes
-            if any(attr_local.lower().startswith(p) for p in STRIP_ATTR_PREFIXES):
+            if any(attr_name.startswith(p) for p in STRIP_ATTR_PREFIXES):
                 attrs_to_remove.append(attr)
                 continue
 
             # Strip other non-essential attributes
-            if attr_local.lower() in ('role', 'tabindex', 'accesskey', 'draggable',
-                                       'contenteditable', 'spellcheck', 'autocorrect',
-                                       'autocapitalize', 'autofocus', 'dir',
-                                       'translate', 'inputmode', 'enterkeyhint',
-                                       'hidden', 'inert', 'popover'):
+            if attr_name in ('role', 'tabindex', 'accesskey', 'draggable',
+                             'contenteditable', 'spellcheck', 'autocorrect',
+                             'autocapitalize', 'autofocus', 'dir',
+                             'translate', 'inputmode', 'enterkeyhint',
+                             'hidden', 'inert', 'popover'):
                 attrs_to_remove.append(attr)
 
         for attr in attrs_to_remove:
@@ -705,6 +710,23 @@ def strip_unnecessary_attributes(xhtml_bytes: bytes) -> tuple[bytes, int]:
         return result.encode('utf-8'), removed
 
     return xhtml_bytes, removed
+
+
+def _is_pagebreak_marker(el) -> bool:
+    role = el.get('role') or ''
+    if _contains_token(role, 'doc-pagebreak'):
+        return True
+
+    for attr, value in el.attrib.items():
+        attr_local = attr.split('}')[-1] if '}' in attr else attr
+        if attr_local.lower() in ('type', 'epub:type') and _contains_token(value, 'pagebreak'):
+            return True
+
+    return False
+
+
+def _contains_token(value: str, token: str) -> bool:
+    return token in value.split()
 
 
 def add_chapter_page_breaks(xhtml_bytes: bytes) -> bytes:
