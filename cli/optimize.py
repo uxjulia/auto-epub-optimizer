@@ -41,7 +41,7 @@ def main() -> int:
         f"remove_fonts={args.remove_fonts} | "
         f"clean_css={args.remove_css} | "
         f"text_cleanup={args.text_cleanup} | "
-        f"words_per_reference_page={args.words_per_reference_page}"
+        f"characters_per_reference_page={args.characters_per_reference_page}"
     )
     print("")
 
@@ -165,10 +165,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="visible word threshold for --split-long-sections",
     )
     parser.add_argument(
-        "--words-per-reference-page",
+        "--characters-per-reference-page",
+        dest="characters_per_reference_page",
         type=bounded_int(1, 10000),
-        default=275,
-        help="word count used for generated CrossInk reference pages",
+        default=None,
+        help="character count used for generated CrossInk reference pages",
+    )
+    parser.add_argument(
+        "--words-per-reference-page",
+        dest="legacy_words_per_reference_page",
+        type=bounded_int(1, 10000),
+        default=None,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--filename-format",
@@ -200,6 +208,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def normalize_legacy_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if args.characters_per_reference_page is None:
+        if args.legacy_words_per_reference_page is not None:
+            args.characters_per_reference_page = max(
+                1,
+                min(10000, round(args.legacy_words_per_reference_page * 5.5)),
+            )
+        else:
+            args.characters_per_reference_page = 1500
+
     contrast_arg = getattr(args, "contrast_arg", None)
     args.contrast_boost = False
 
@@ -241,7 +258,7 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         normalize_ellipsis=args.normalize_ellipsis,
         split_long_sections=args.split_long_sections,
         section_split_word_threshold=args.section_split_word_threshold,
-        words_per_reference_page=args.words_per_reference_page,
+        characters_per_reference_page=args.characters_per_reference_page,
         filename_format=args.filename_format,
     )
 

@@ -130,7 +130,7 @@ Edit `~/.config/epub-optimizer/.env`:
 | `EPUB_CONTRAST`        | Optional - set to `1` to enable contrast boost                                                                                     |
 | `EPUB_CONTRAST_FACTOR` | Optional contrast multiplier used when contrast boost is enabled, default `1.0`                                                     |
 | `EPUB_LIGHT_NOVEL`     | Optional - set to `1` to rotate/split landscape light-novel images                                                                 |
-| `EPUB_WORDS_PER_REFERENCE_PAGE` | Optional word count used for generated CrossInk reference pages, default `275`                                             |
+| `EPUB_CHARACTERS_PER_REFERENCE_PAGE` | Optional character count used for generated CrossInk reference pages, default `1500`                                      |
 | `EPUB_SPLIT_LONG_SECTIONS` | Optional - set to `1` to split oversized XHTML spine items into smaller reader sections                                         |
 | `EPUB_SECTION_SPLIT_WORD_THRESHOLD` | Optional visible-word threshold for `EPUB_SPLIT_LONG_SECTIONS`, default `6000`                                       |
 | `EPUB_FILENAME_FORMAT` | Optional output name pattern: `author-title`, `title-author`, or `title`                                                           |
@@ -267,7 +267,7 @@ The output filename may be normalized from the EPUB's internal metadata or title
 | `--no-normalize-ellipsis` | -           | Keep ellipsis characters unchanged        |
 | `--split-long-sections` | -             | Split oversized XHTML spine items into smaller reader sections |
 | `--section-split-word-threshold <words>` | `6000` | Visible-word threshold used with `--split-long-sections` |
-| `--words-per-reference-page <words>` | `275` | Word count used for generated CrossInk reference pages |
+| `--characters-per-reference-page <chars>` | `1500` | Character count used for generated CrossInk reference pages |
 | `--filename-format`    | `author-title` | Output filename pattern from metadata     |
 | `--suffix <str>`       | empty          | Suffix appended to output filename        |
 | `-v, --verbose`        | -              | Print progress and summary details        |

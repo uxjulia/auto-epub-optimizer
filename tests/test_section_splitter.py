@@ -65,7 +65,7 @@ class SectionSplitterTests(unittest.TestCase):
                     text_cleanup=False,
                     split_long_sections=True,
                     section_split_word_threshold=500,
-                    words_per_reference_page=100,
+                    characters_per_reference_page=100,
                 ),
             )
 
@@ -102,7 +102,7 @@ class SectionSplitterTests(unittest.TestCase):
                 self.assertNotIn('chapter__ci_section_2.xhtml', ncx)
 
                 locations = json.loads(zf.read('META-INF/x-locations.json').decode('utf-8'))
-                self.assertEqual(locations['wordsPerReferencePage'], 100)
+                self.assertEqual(locations['charactersPerReferencePage'], 100)
                 self.assertGreater(locations['totalReferencePages'], 10)
 
     def _write_fixture(self, path: Path):
