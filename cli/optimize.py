@@ -154,17 +154,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--keep-dashes", dest="normalize_dashes", action="store_false", help="keep em/en dashes unchanged")
     parser.add_argument("--no-normalize-ellipsis", dest="normalize_ellipsis", action="store_false", help="keep ellipsis characters unchanged")
     parser.add_argument(
-        "--split-long-sections",
-        action="store_true",
-        help="split oversized XHTML spine items into smaller EPUB sections",
-    )
-    parser.add_argument(
-        "--section-split-word-threshold",
-        type=int,
-        default=6000,
-        help="visible word threshold for --split-long-sections",
-    )
-    parser.add_argument(
         "--characters-per-reference-page",
         dest="characters_per_reference_page",
         type=bounded_int(1, 10000),
@@ -256,8 +245,6 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         normalize_quotes=args.normalize_quotes,
         normalize_dashes=args.normalize_dashes,
         normalize_ellipsis=args.normalize_ellipsis,
-        split_long_sections=args.split_long_sections,
-        section_split_word_threshold=args.section_split_word_threshold,
         characters_per_reference_page=args.characters_per_reference_page,
         filename_format=args.filename_format,
     )

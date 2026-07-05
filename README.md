@@ -131,8 +131,6 @@ Edit `~/.config/epub-optimizer/.env`:
 | `EPUB_CONTRAST_FACTOR` | Optional contrast multiplier used when contrast boost is enabled, default `1.0`                                                     |
 | `EPUB_LIGHT_NOVEL`     | Optional - set to `1` to rotate/split landscape light-novel images                                                                 |
 | `EPUB_CHARACTERS_PER_REFERENCE_PAGE` | Optional character count used for generated CrossInk reference pages, default `1500`                                      |
-| `EPUB_SPLIT_LONG_SECTIONS` | Optional - set to `1` to split oversized XHTML spine items into smaller reader sections                                         |
-| `EPUB_SECTION_SPLIT_WORD_THRESHOLD` | Optional visible-word threshold for `EPUB_SPLIT_LONG_SECTIONS`, default `6000`                                       |
 | `EPUB_FILENAME_FORMAT` | Optional output name pattern: `author-title`, `title-author`, or `title`                                                           |
 | `EPUB_SUFFIX`          | Optional suffix appended before `.epub`, e.g. `-optimized`                                                                         |
 
@@ -265,8 +263,6 @@ The output filename may be normalized from the EPUB's internal metadata or title
 | `--normalize-quotes`   | -              | Convert curly quotes to straight quotes   |
 | `--normalize-dashes`   | -              | Convert em/en dashes to ASCII dashes      |
 | `--no-normalize-ellipsis` | -           | Keep ellipsis characters unchanged        |
-| `--split-long-sections` | -             | Split oversized XHTML spine items into smaller reader sections |
-| `--section-split-word-threshold <words>` | `6000` | Visible-word threshold used with `--split-long-sections` |
 | `--characters-per-reference-page <chars>` | `1500` | Character count used for generated CrossInk reference pages |
 | `--filename-format`    | `author-title` | Output filename pattern from metadata     |
 | `--suffix <str>`       | empty          | Suffix appended to output filename        |
@@ -295,6 +291,4 @@ python3 cli/optimize.py --filename-format=title-author book.epub
 # Faster cleanup that keeps CSS and embedded fonts
 python3 cli/optimize.py --no-remove-css --no-remove-fonts book.epub
 
-# Split very long chapters into smaller reader sections for CrossInk
-python3 cli/optimize.py --split-long-sections book.epub
 ```
