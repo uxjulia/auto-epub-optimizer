@@ -417,7 +417,7 @@ def process_epub(input_path: str, output_path: str,
             if not should_process(img_path):
                 continue
 
-            results = process_image(img_bytes, Path(img_path).name, image_options)
+            results = process_image(img_bytes, Path(img_path).name, image_options, source_path=img_path)
 
             for j, result in enumerate(results):
                 new_path = Path(img_path).parent / result.new_filename

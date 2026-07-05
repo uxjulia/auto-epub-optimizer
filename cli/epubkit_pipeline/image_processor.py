@@ -9,6 +9,7 @@ X4 specs (SSD1677 controller):
   - RAM: 380KB — smaller images = faster rendering
 """
 
+import gzip
 import io
 import struct
 from pathlib import Path
@@ -16,6 +17,11 @@ from dataclasses import dataclass
 from typing import Optional
 
 from PIL import Image, ImageEnhance, ImageOps, ImageDraw, ImageFont
+
+try:
+    import cairosvg
+except Exception:  # pragma: no cover - handled at runtime for optional installs
+    cairosvg = None
 
 
 # X4 screen dimensions (800x480 landscape panel)
@@ -34,7 +40,7 @@ BAYER_4X4 = (
     (15, 7, 13, 5),
 )
 
-SUPPORTED_EXTENSIONS = {'.png', '.gif', '.webp', '.bmp', '.jpeg', '.jpg', '.tif', '.tiff'}
+SUPPORTED_EXTENSIONS = {'.png', '.gif', '.webp', '.bmp', '.jpeg', '.jpg', '.tif', '.tiff', '.svg', '.svgz'}
 
 
 @dataclass
@@ -93,6 +99,24 @@ def _encode_jpeg_bytes(img: Image.Image, quality: int, grayscale: bool) -> bytes
         subsampling=2 if grayscale else 0
     )
     return buffer.getvalue()
+
+
+def _rasterize_svg_to_png(image_bytes: bytes, filename: str, source_path: Optional[str] = None) -> bytes:
+    """Render an SVG resource to PNG bytes so the normal raster pipeline can handle it."""
+    if cairosvg is None:
+        raise RuntimeError("CairoSVG is not installed")
+
+    svg_bytes = image_bytes
+    if Path(filename).suffix.lower() == '.svgz':
+        svg_bytes = gzip.decompress(image_bytes)
+
+    render_args = {
+        'bytestring': svg_bytes,
+        'background_color': 'white',
+    }
+    if source_path:
+        render_args['url'] = str(Path(source_path).resolve())
+    return cairosvg.svg2png(**render_args)
 
 
 def build_crossink_pxc_bytes(image_bytes: bytes) -> tuple[bytes, int, int]:
@@ -198,7 +222,8 @@ def _handle_light_novel(img: Image.Image, rotate_left: bool) -> list[Image.Image
         return [rotated]
 
 
-def process_image(image_bytes: bytes, filename: str, options: ImageOptions = None) -> list[ImageResult]:
+def process_image(image_bytes: bytes, filename: str, options: ImageOptions = None,
+                  source_path: Optional[str] = None) -> list[ImageResult]:
     """
     Process a single image for X4 optimization.
     Returns a list of ImageResult (usually 1, but Light Novel mode may split into 2).
@@ -210,9 +235,12 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
     original_ext = Path(filename).suffix.lower()
     stem = Path(filename).stem
     original_is_safe_jpeg = original_ext in {'.jpg', '.jpeg'} and not is_progressive_jpeg(image_bytes)
+    decode_bytes = image_bytes
 
     try:
-        img = Image.open(io.BytesIO(image_bytes))
+        if original_ext in {'.svg', '.svgz'}:
+            decode_bytes = _rasterize_svg_to_png(image_bytes, filename, source_path)
+        img = Image.open(io.BytesIO(decode_bytes))
     except Exception as e:
         return [ImageResult(
             output_bytes=image_bytes,
