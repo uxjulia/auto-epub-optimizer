@@ -167,6 +167,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=argparse.SUPPRESS,
     )
+    parser.add_argument("--no-split-long-sections", dest="split_long_sections", action="store_false",
+                        help="disable splitting oversized XHTML spine sections")
+    parser.add_argument("--section-split-word-threshold", type=bounded_int(1, 50000), default=2000,
+                        help="visible word threshold for splitting XHTML spine sections")
+    parser.add_argument("--section-split-byte-threshold", type=bounded_int(4096, 1048576), default=65536,
+                        help="uncompressed HTML byte threshold for splitting XHTML spine sections")
+    parser.add_argument("--section-split-hard-byte-limit", type=bounded_int(4096, 2097152), default=98304,
+                        help="target hard byte limit for generated split XHTML sections")
     parser.add_argument(
         "--filename-format",
         choices=("author-title", "title-author", "title"),
@@ -192,6 +200,7 @@ def build_parser() -> argparse.ArgumentParser:
         normalize_quotes=False,
         normalize_dashes=False,
         normalize_ellipsis=True,
+        split_long_sections=True,
     )
     return parser
 
@@ -246,6 +255,10 @@ def build_options(args: argparse.Namespace) -> ProcessingOptions:
         normalize_dashes=args.normalize_dashes,
         normalize_ellipsis=args.normalize_ellipsis,
         characters_per_reference_page=args.characters_per_reference_page,
+        split_long_sections=args.split_long_sections,
+        section_split_word_threshold=args.section_split_word_threshold,
+        section_split_byte_threshold=args.section_split_byte_threshold,
+        section_split_hard_byte_limit=args.section_split_hard_byte_limit,
         filename_format=args.filename_format,
     )
 

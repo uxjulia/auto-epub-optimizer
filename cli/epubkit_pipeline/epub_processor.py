@@ -38,7 +38,7 @@ from epub_structure import (
     update_xhtml_references, update_css_references,
     fix_svg_covers, fix_toc, find_content_files, add_image_to_opf,
     write_crossink_location_manifest, write_crossink_optimizer_manifest,
-    remove_css_from_opf, remove_css_files_from_opf
+    remove_css_from_opf, remove_css_files_from_opf, split_long_sections
 )
 
 
@@ -63,6 +63,10 @@ class ProcessingOptions:
     normalize_dashes: bool = False
     normalize_ellipsis: bool = True
     characters_per_reference_page: int = 1500
+    split_long_sections: bool = True
+    section_split_word_threshold: int = 2000
+    section_split_byte_threshold: int = 65536
+    section_split_hard_byte_limit: int = 98304
     filename_format: str = 'author-title'
     # Metadata edits (applied if non-empty)
     metadata_edits: dict = field(default_factory=dict)
@@ -624,12 +628,23 @@ def process_epub(input_path: str, output_path: str,
             if report.metadata_items_stripped > 0:
                 opf_tree.write(opf_path, xml_declaration=True, encoding='utf-8', pretty_print=True)
 
-        # Step 18: Fix TOC (90%)
+        # Step 18: Split oversized text sections before TOC and location generation.
+        if options.split_long_sections:
+            _progress(89, "Splitting long sections...")
+            split_long_sections(
+                opf_path,
+                True,
+                options.section_split_word_threshold,
+                options.section_split_byte_threshold,
+                options.section_split_hard_byte_limit,
+            )
+
+        # Step 19: Fix TOC (90%)
         _progress(90, "Checking TOC...")
         toc_fixed, toc_msg = fix_toc(work_dir, opf_path)
         report.toc_status = toc_msg
 
-        # Step 19: Generate CrossInk location sidecar (92%)
+        # Step 20: Generate CrossInk location sidecar (92%)
         _progress(92, "Generating CrossInk locations...")
         report.crossink_locations, report.crossink_reference_pages = write_crossink_location_manifest(
             work_dir, opf_path, options.characters_per_reference_page

@@ -6,6 +6,7 @@ Handles: OPF/NCX/XHTML reference updates, SVG cover fix, TOC repair/regeneration
 import os
 import re
 import json
+import copy
 from pathlib import Path
 from urllib.parse import unquote, quote
 
@@ -32,6 +33,10 @@ CROSSINK_LOCATION_MANIFEST_PATH = os.path.join('META-INF', 'x-locations.json')
 CROSSINK_OPTIMIZER_MANIFEST_PATH = os.path.join('META-INF', 'crossink', 'optimizer-v1.json')
 CROSSINK_LOCATION_WORDS_PER_UNIT = 64
 DEFAULT_CROSSINK_REFERENCE_CHARACTERS_PER_PAGE = 1500
+SECTION_SPLIT_WORD_THRESHOLD = 2000
+SECTION_SPLIT_BYTE_THRESHOLD = 65536
+SECTION_SPLIT_HARD_BYTE_LIMIT = 98304
+SECTION_SPLIT_SUFFIX_RE = re.compile(r'__ci_section_\d{3}(?=\.[^.]+$)', re.IGNORECASE)
 
 
 def _is_element(node):
@@ -114,6 +119,166 @@ def _spine_hrefs(opf_path: str) -> list[str]:
     return hrefs
 
 
+def _split_base_href(href: str) -> str:
+    return SECTION_SPLIT_SUFFIX_RE.sub('', str(Path(href).as_posix()))
+
+
+def _section_split_path(path: Path, part_index: int) -> Path:
+    if part_index == 0:
+        return path
+    return path.with_name(f'{path.stem}__ci_section_{part_index + 1:03d}{path.suffix}')
+
+
+def _safe_split_child(node) -> bool:
+    if not _is_element(node):
+        return True
+    name = etree.QName(node).localname.lower()
+    return name in {
+        'p', 'div', 'section', 'article', 'aside', 'blockquote', 'ul', 'ol', 'li',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr',
+    }
+
+
+def _is_heading_child(node) -> bool:
+    return _is_element(node) and re.fullmatch(r'h[1-6]', etree.QName(node).localname.lower()) is not None
+
+
+def _keeps_split_cluster(node) -> bool:
+    if not _is_element(node):
+        return False
+    name = etree.QName(node).localname.lower()
+    if name in {'table', 'figure', 'svg'}:
+        return True
+    return bool(node.xpath('.//*[local-name()="table" or local-name()="figure" or local-name()="svg"]'))
+
+
+def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int = SECTION_SPLIT_WORD_THRESHOLD,
+                        byte_threshold: int = SECTION_SPLIT_BYTE_THRESHOLD,
+                        hard_byte_limit: int = SECTION_SPLIT_HARD_BYTE_LIMIT) -> tuple[int, int]:
+    if not enabled:
+        return 0, 0
+
+    tree = etree.parse(opf_path)
+    root = tree.getroot()
+    manifest = _find_element(root, 'manifest')
+    spine = _find_element(root, 'spine')
+    if manifest is None or spine is None:
+        return 0, 0
+
+    opf_dir = Path(opf_path).parent
+    manifest_by_id = {}
+    for item in _find_elements(root, 'item'):
+        item_id = item.get('id')
+        href = item.get('href')
+        media_type = item.get('media-type', '')
+        if item_id and href and ('xhtml' in media_type or href.lower().endswith(('.xhtml', '.html', '.htm'))):
+            manifest_by_id[item_id] = item
+
+    split_sections = 0
+    split_parts = 0
+    existing_ids = {item.get('id') for item in _find_elements(root, 'item') if item.get('id')}
+    itemrefs = list(_find_elements(spine, 'itemref'))
+
+    for itemref in itemrefs:
+        idref = itemref.get('idref')
+        item = manifest_by_id.get(idref)
+        if item is None:
+            continue
+        href = unquote(item.get('href', '').split('#')[0])
+        xhtml_path = opf_dir / href
+        if not xhtml_path.exists():
+            continue
+        raw = xhtml_path.read_bytes()
+        visible_text = _extract_visible_text(str(xhtml_path))
+        if _count_location_words(visible_text) <= word_threshold and len(raw) <= byte_threshold:
+            continue
+
+        parser = etree.XMLParser(recover=True, remove_blank_text=False)
+        doc = etree.parse(str(xhtml_path), parser)
+        body = doc.find(f'.//{{{NS_XHTML}}}body')
+        if body is None:
+            matches = doc.xpath('//*[local-name()="body"]')
+            body = matches[0] if matches else None
+        if body is None or len(body) < 2:
+            continue
+
+        chunks = []
+        current = []
+        current_words = 0
+        current_bytes = 0
+        for child in list(body):
+            child_bytes = len(etree.tostring(child, encoding='utf-8'))
+            child_words = _count_location_words(' '.join(child.itertext()))
+            would_exceed = current and (
+                current_words + child_words > word_threshold or current_bytes + child_bytes > byte_threshold
+            )
+            can_break_before = (
+                current and _safe_split_child(child) and not _keeps_split_cluster(child) and
+                not _is_heading_child(current[-1])
+            )
+            if would_exceed and can_break_before:
+                chunks.append(current)
+                current = []
+                current_words = 0
+                current_bytes = 0
+
+            current.append(child)
+            current_words += child_words
+            current_bytes += child_bytes
+
+            can_break_after = (
+                len(current) > 1 and _safe_split_child(child) and
+                not _keeps_split_cluster(child) and not _is_heading_child(child)
+            )
+            if current_bytes >= hard_byte_limit and can_break_after:
+                chunks.append(current)
+                current = []
+                current_words = 0
+                current_bytes = 0
+
+        if current:
+            chunks.append(current)
+        if len(chunks) < 2:
+            continue
+
+        added_refs = []
+        for part_index, chunk in enumerate(chunks):
+            part_path = _section_split_path(xhtml_path, part_index)
+            part_doc = copy.deepcopy(doc)
+            part_body = part_doc.find(f'.//{{{NS_XHTML}}}body')
+            if part_body is None:
+                part_body = part_doc.xpath('//*[local-name()="body"]')[0]
+            for old_child in list(part_body):
+                part_body.remove(old_child)
+            for node in chunk:
+                part_body.append(copy.deepcopy(node))
+            part_doc.write(str(part_path), xml_declaration=True, encoding='utf-8')
+            if part_index > 0:
+                rel_href = os.path.relpath(part_path, opf_dir)
+                new_id = f'{idref}-ci-{part_index + 1}'
+                while new_id in existing_ids:
+                    new_id += 'x'
+                existing_ids.add(new_id)
+                new_item = etree.SubElement(manifest, f'{{{NS_OPF}}}item')
+                new_item.set('id', new_id)
+                new_item.set('href', Path(rel_href).as_posix())
+                new_item.set('media-type', 'application/xhtml+xml')
+                added_refs.append(new_id)
+
+        insert_pos = spine.index(itemref) + 1
+        for offset, new_id in enumerate(added_refs):
+            new_ref = etree.Element(f'{{{NS_OPF}}}itemref')
+            new_ref.set('idref', new_id)
+            spine.insert(insert_pos + offset, new_ref)
+
+        split_sections += 1
+        split_parts += len(chunks)
+
+    if split_sections:
+        tree.write(opf_path, xml_declaration=True, encoding='utf-8', pretty_print=True)
+    return split_sections, split_parts
+
+
 def write_crossink_location_manifest(
     epub_dir: str,
     opf_path: str,
@@ -133,6 +298,9 @@ def write_crossink_location_manifest(
     total_characters = 0
     next_location = 1
     spine_hrefs = list(_spine_hrefs(opf_path))
+    split_bases = {_split_base_href(href) for href in spine_hrefs if _split_base_href(href) != str(Path(href).as_posix())}
+    group_by_base = {base: idx for idx, base in enumerate(sorted(split_bases))}
+    chapter_groups = {}
 
     for index, href in enumerate(spine_hrefs):
         xhtml_path = opf_dir / href
@@ -152,7 +320,7 @@ def write_crossink_location_manifest(
             if character_count > 0 else 0
         )
 
-        spine.append({
+        entry = {
             'index': index,
             'href': str(Path(href).as_posix()),
             'wordStart': total_words,
@@ -163,7 +331,36 @@ def write_crossink_location_manifest(
             'endLocation': end_location,
             'startReferencePage': start_reference_page,
             'endReferencePage': end_reference_page,
-        })
+        }
+        base_href = _split_base_href(href)
+        if base_href in group_by_base:
+            group_index = group_by_base[base_href]
+            entry['chapterGroup'] = group_index
+            group = chapter_groups.setdefault(group_index, {
+                'index': group_index,
+                'title': Path(base_href).stem,
+                'firstSpineIndex': index,
+                'lastSpineIndex': index,
+                'startLocation': start_location,
+                'endLocation': end_location,
+                'wordStart': total_words,
+                'wordCount': 0,
+                'characterStart': total_characters,
+                'characterCount': 0,
+                'referencePageStart': start_reference_page,
+                'referencePageEnd': end_reference_page,
+            })
+            group['firstSpineIndex'] = min(group['firstSpineIndex'], index)
+            group['lastSpineIndex'] = max(group['lastSpineIndex'], index)
+            if start_location and (not group['startLocation'] or start_location < group['startLocation']):
+                group['startLocation'] = start_location
+            group['endLocation'] = max(group['endLocation'], end_location)
+            group['wordCount'] += word_count
+            group['characterCount'] += character_count
+            if start_reference_page and (not group['referencePageStart'] or start_reference_page < group['referencePageStart']):
+                group['referencePageStart'] = start_reference_page
+            group['referencePageEnd'] = max(group['referencePageEnd'], end_reference_page)
+        spine.append(entry)
 
         total_words += word_count
         total_characters += character_count
@@ -188,6 +385,8 @@ def write_crossink_location_manifest(
         ) // characters_per_reference_page,
         'spine': spine,
     }
+    if chapter_groups:
+        manifest['chapterGroups'] = [chapter_groups[index] for index in sorted(chapter_groups)]
 
     out_path = Path(epub_dir) / CROSSINK_LOCATION_MANIFEST_PATH
     out_path.parent.mkdir(parents=True, exist_ok=True)
