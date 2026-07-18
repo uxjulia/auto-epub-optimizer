@@ -169,12 +169,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--no-split-long-sections", dest="split_long_sections", action="store_false",
                         help="disable splitting oversized XHTML spine sections")
-    parser.add_argument("--section-split-word-threshold", type=bounded_int(1, 50000), default=2000,
-                        help="visible word threshold for splitting XHTML spine sections")
-    parser.add_argument("--section-split-byte-threshold", type=bounded_int(4096, 1048576), default=65536,
-                        help="uncompressed HTML byte threshold for splitting XHTML spine sections")
-    parser.add_argument("--section-split-hard-byte-limit", type=bounded_int(4096, 2097152), default=98304,
-                        help="target hard byte limit for generated split XHTML sections")
+    parser.add_argument("--section-split-word-threshold", type=bounded_int(1, 50000), default=8000,
+                        help="secondary visible-word safeguard for splitting XHTML spine sections")
+    parser.add_argument("--section-split-byte-threshold", type=bounded_int(4096, 1048576), default=32768,
+                        help="target uncompressed HTML size for generated XHTML spine sections")
+    parser.add_argument("--section-split-hard-byte-limit", type=bounded_int(4096, 2097152), default=49152,
+                        help="safe-boundary maximum for generated split XHTML sections")
     parser.add_argument(
         "--filename-format",
         choices=("author-title", "title-author", "title"),

@@ -64,9 +64,9 @@ class ProcessingOptions:
     normalize_ellipsis: bool = True
     characters_per_reference_page: int = 1500
     split_long_sections: bool = True
-    section_split_word_threshold: int = 2000
-    section_split_byte_threshold: int = 65536
-    section_split_hard_byte_limit: int = 98304
+    section_split_word_threshold: int = 8000
+    section_split_byte_threshold: int = 32768
+    section_split_hard_byte_limit: int = 49152
     filename_format: str = 'author-title'
     # Metadata edits (applied if non-empty)
     metadata_edits: dict = field(default_factory=dict)
