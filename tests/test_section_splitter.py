@@ -37,7 +37,7 @@ class SectionSplitterTests(unittest.TestCase):
             '<html xmlns="http://www.w3.org/1999/xhtml"><body>'
             '<div class="chapter">'
             f'<p>{"a" * 12000}</p>'
-            f'<p>{"b" * 12000}</p>'
+            f'<div class="table"><table><tr><td>{"b" * 12000}</td></tr></table></div>'
             f'<p>{"c" * 12000}</p>'
             '</div>'
             '</body></html>',
@@ -70,6 +70,8 @@ class SectionSplitterTests(unittest.TestCase):
             part_path = opf_dir / name
             self.assertIn('class="chapter"', part_path.read_text(encoding='utf-8'))
             self.assertLessEqual(part_path.stat().st_size, 32768)
+        self.assertIn('<table>', (opf_dir / 'chapter.xhtml').read_text(encoding='utf-8'))
+        self.assertNotIn('<table>', (opf_dir / 'chapter__ci_section_002.xhtml').read_text(encoding='utf-8'))
 
 
 if __name__ == '__main__':

@@ -152,6 +152,12 @@ def _keeps_split_cluster(node) -> bool:
     return bool(node.xpath('.//*[local-name()="table" or local-name()="figure" or local-name()="svg"]'))
 
 
+def _is_atomic_split_container(node) -> bool:
+    if not _is_element(node):
+        return False
+    return etree.QName(node).localname.lower() in {'table', 'figure', 'svg'}
+
+
 def _find_section_split_container(body):
     """Descend through single wrapper elements to find usable block boundaries."""
     container = body
@@ -164,7 +170,7 @@ def _find_section_split_container(body):
         if len(element_children) != 1:
             return None, []
         child_index, child = element_children[0]
-        if _keeps_split_cluster(child):
+        if _is_atomic_split_container(child):
             return None, []
         child_path.append(child_index)
         container = child
