@@ -152,6 +152,24 @@ def _keeps_split_cluster(node) -> bool:
     return bool(node.xpath('.//*[local-name()="table" or local-name()="figure" or local-name()="svg"]'))
 
 
+def _find_section_split_container(body):
+    """Descend through single wrapper elements to find usable block boundaries."""
+    container = body
+    child_path = []
+    while True:
+        children = list(container)
+        element_children = [(index, child) for index, child in enumerate(children) if _is_element(child)]
+        if len(element_children) >= 2:
+            return container, child_path
+        if len(element_children) != 1:
+            return None, []
+        child_index, child = element_children[0]
+        if _keeps_split_cluster(child):
+            return None, []
+        child_path.append(child_index)
+        container = child
+
+
 def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int = SECTION_SPLIT_WORD_THRESHOLD,
                         byte_threshold: int = SECTION_SPLIT_BYTE_THRESHOLD,
                         hard_byte_limit: int = SECTION_SPLIT_HARD_BYTE_LIMIT) -> tuple[int, int]:
@@ -199,14 +217,22 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
         if body is None:
             matches = doc.xpath('//*[local-name()="body"]')
             body = matches[0] if matches else None
-        if body is None or len(body) < 2:
+        if body is None:
+            continue
+        split_container, split_container_path = _find_section_split_container(body)
+        if split_container is None:
             continue
 
+        split_children = list(split_container)
+        fixed_bytes = max(
+            0,
+            len(raw) - sum(len(etree.tostring(child, encoding='utf-8')) for child in split_children),
+        )
         chunks = []
         current = []
         current_words = 0
-        current_bytes = 0
-        for child in list(body):
+        current_bytes = fixed_bytes
+        for child in split_children:
             child_bytes = len(etree.tostring(child, encoding='utf-8'))
             child_words = _count_location_words(' '.join(child.itertext()))
             would_exceed = current and (
@@ -220,21 +246,21 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
                 chunks.append(current)
                 current = []
                 current_words = 0
-                current_bytes = 0
+                current_bytes = fixed_bytes
 
             current.append(child)
             current_words += child_words
             current_bytes += child_bytes
 
             can_break_after = (
-                len(current) > 1 and _safe_split_child(child) and
+                current and _safe_split_child(child) and
                 not _keeps_split_cluster(child) and not _is_heading_child(child)
             )
             if current_bytes >= hard_byte_limit and can_break_after:
                 chunks.append(current)
                 current = []
                 current_words = 0
-                current_bytes = 0
+                current_bytes = fixed_bytes
 
         if current:
             chunks.append(current)
@@ -248,10 +274,13 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
             part_body = part_doc.find(f'.//{{{NS_XHTML}}}body')
             if part_body is None:
                 part_body = part_doc.xpath('//*[local-name()="body"]')[0]
-            for old_child in list(part_body):
-                part_body.remove(old_child)
+            part_container = part_body
+            for child_index in split_container_path:
+                part_container = list(part_container)[child_index]
+            for old_child in list(part_container):
+                part_container.remove(old_child)
             for node in chunk:
-                part_body.append(copy.deepcopy(node))
+                part_container.append(copy.deepcopy(node))
             part_doc.write(str(part_path), xml_declaration=True, encoding='utf-8')
             if part_index > 0:
                 rel_href = os.path.relpath(part_path, opf_dir)
