@@ -178,7 +178,8 @@ def _find_section_split_container(body):
 
 def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int = SECTION_SPLIT_WORD_THRESHOLD,
                         byte_threshold: int = SECTION_SPLIT_BYTE_THRESHOLD,
-                        hard_byte_limit: int = SECTION_SPLIT_HARD_BYTE_LIMIT) -> tuple[int, int]:
+                        hard_byte_limit: int = SECTION_SPLIT_HARD_BYTE_LIMIT,
+                        source_spine_map: dict | None = None) -> tuple[int, int]:
     if not enabled:
         return 0, 0
 
@@ -194,21 +195,34 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
     for item in _find_elements(root, 'item'):
         item_id = item.get('id')
         href = item.get('href')
-        media_type = item.get('media-type', '')
-        if item_id and href and ('xhtml' in media_type or href.lower().endswith(('.xhtml', '.html', '.htm'))):
+        if item_id and href:
             manifest_by_id[item_id] = item
 
     split_sections = 0
     split_parts = 0
     existing_ids = {item.get('id') for item in _find_elements(root, 'item') if item.get('id')}
     itemrefs = list(_find_elements(spine, 'itemref'))
+    if source_spine_map is not None:
+        source_spine_map.clear()
+        source_spine_map.update({
+            'version': 1,
+            'spineCount': len(itemrefs),
+            'hasSplits': False,
+            'sourceByHref': {},
+        })
 
-    for itemref in itemrefs:
+    for source_spine_index, itemref in enumerate(itemrefs):
         idref = itemref.get('idref')
         item = manifest_by_id.get(idref)
         if item is None:
             continue
         href = unquote(item.get('href', '').split('#')[0])
+        normalized_href = Path(href).as_posix()
+        if source_spine_map is not None:
+            source_spine_map['sourceByHref'][normalized_href] = {'sourceSpineIndex': source_spine_index}
+        media_type = item.get('media-type', '')
+        if 'xhtml' not in media_type and not href.lower().endswith(('.xhtml', '.html', '.htm')):
+            continue
         xhtml_path = opf_dir / href
         if not xhtml_path.exists():
             continue
@@ -274,6 +288,7 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
             continue
 
         added_refs = []
+        tag_offsets = {}
         for part_index, chunk in enumerate(chunks):
             part_path = _section_split_path(xhtml_path, part_index)
             part_doc = copy.deepcopy(doc)
@@ -288,8 +303,25 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
             for node in chunk:
                 part_container.append(copy.deepcopy(node))
             part_doc.write(str(part_path), xml_declaration=True, encoding='utf-8')
+            rel_href = Path(os.path.relpath(part_path, opf_dir)).as_posix()
+            if source_spine_map is not None:
+                ranges_by_name = {}
+                for node in chunk:
+                    name = etree.QName(node).localname.lower()
+                    if name not in ranges_by_name:
+                        ranges_by_name[name] = {
+                            'name': name,
+                            'offset': tag_offsets.get(name, 0),
+                            'count': 0,
+                        }
+                    ranges_by_name[name]['count'] += 1
+                    tag_offsets[name] = tag_offsets.get(name, 0) + 1
+                source_spine_map['sourceByHref'][rel_href] = {
+                    'sourceSpineIndex': source_spine_index,
+                    'containerDepth': len(split_container_path),
+                    'childRanges': list(ranges_by_name.values()),
+                }
             if part_index > 0:
-                rel_href = os.path.relpath(part_path, opf_dir)
                 new_id = f'{idref}-ci-{part_index + 1}'
                 while new_id in existing_ids:
                     new_id += 'x'
@@ -308,6 +340,8 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
 
         split_sections += 1
         split_parts += len(chunks)
+        if source_spine_map is not None:
+            source_spine_map['hasSplits'] = True
 
     if split_sections:
         tree.write(opf_path, xml_declaration=True, encoding='utf-8', pretty_print=True)
@@ -318,6 +352,7 @@ def write_crossink_location_manifest(
     epub_dir: str,
     opf_path: str,
     characters_per_reference_page: int = DEFAULT_CROSSINK_REFERENCE_CHARACTERS_PER_PAGE,
+    source_spine_map: dict | None = None,
 ) -> tuple[int, int]:
     """
     Write META-INF/x-locations.json with stable EPUB locations and character-based reference pages.
@@ -422,6 +457,21 @@ def write_crossink_location_manifest(
     }
     if chapter_groups:
         manifest['chapterGroups'] = [chapter_groups[index] for index in sorted(chapter_groups)]
+    if source_spine_map and source_spine_map.get('hasSplits'):
+        source_by_href = source_spine_map.get('sourceByHref', {})
+        mapped_spine = []
+        for index, href in enumerate(spine_hrefs):
+            source_entry = source_by_href.get(Path(href).as_posix())
+            if source_entry is None:
+                mapped_spine = []
+                break
+            mapped_spine.append({'index': index, **source_entry})
+        if mapped_spine:
+            manifest['sourceSpineMap'] = {
+                'version': source_spine_map['version'],
+                'spineCount': source_spine_map['spineCount'],
+                'spine': mapped_spine,
+            }
 
     out_path = Path(epub_dir) / CROSSINK_LOCATION_MANIFEST_PATH
     out_path.parent.mkdir(parents=True, exist_ok=True)

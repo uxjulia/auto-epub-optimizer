@@ -631,13 +631,17 @@ def process_epub(input_path: str, output_path: str,
         # Step 18: Split oversized text sections before TOC and location generation.
         if options.split_long_sections:
             _progress(89, "Splitting long sections...")
+            source_spine_map = {}
             split_long_sections(
                 opf_path,
                 True,
                 options.section_split_word_threshold,
                 options.section_split_byte_threshold,
                 options.section_split_hard_byte_limit,
+                source_spine_map,
             )
+        else:
+            source_spine_map = None
 
         # Step 19: Fix TOC (90%)
         _progress(90, "Checking TOC...")
@@ -647,7 +651,7 @@ def process_epub(input_path: str, output_path: str,
         # Step 20: Generate CrossInk location sidecar (92%)
         _progress(92, "Generating CrossInk locations...")
         report.crossink_locations, report.crossink_reference_pages = write_crossink_location_manifest(
-            work_dir, opf_path, options.characters_per_reference_page
+            work_dir, opf_path, options.characters_per_reference_page, source_spine_map
         )
         report.crossink_image_caches = write_crossink_optimizer_manifest(work_dir, opf_path, image_cache_entries, {
             'htmlNormalized': True,
