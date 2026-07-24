@@ -7,6 +7,7 @@ import os
 import re
 import json
 import copy
+import posixpath
 from pathlib import Path
 from urllib.parse import unquote, quote
 
@@ -117,6 +118,144 @@ def _spine_hrefs(opf_path: str) -> list[str]:
         if idref and idref in manifest:
             hrefs.append(manifest[idref])
     return hrefs
+
+
+def _body_reader_identity(path: Path) -> tuple[str, str] | None:
+    """Return the body ID and document title used to join converter split stubs."""
+    parser = etree.XMLParser(recover=True, resolve_entities=False)
+    try:
+        tree = etree.parse(str(path), parser)
+    except (OSError, etree.XMLSyntaxError):
+        return None
+    body_matches = tree.xpath('//*[local-name()="body"]')
+    title_matches = tree.xpath('//*[local-name()="title"]')
+    if not body_matches or not title_matches:
+        return None
+    body_id = (body_matches[0].get('id') or '').strip()
+    title = ''.join(title_matches[0].itertext()).strip()
+    return (body_id, title) if body_id and title else None
+
+
+def _has_reader_content(path: Path) -> bool:
+    """Match the conservative subset of XHTML that CrossInk can render as a page."""
+    parser = etree.XMLParser(recover=True, resolve_entities=False)
+    try:
+        tree = etree.parse(str(path), parser)
+    except (OSError, etree.XMLSyntaxError):
+        return True
+    body_matches = tree.xpath('//*[local-name()="body"]')
+    if not body_matches:
+        return True
+    body = body_matches[0]
+    for element in body.iter():
+        if not _is_element(element):
+            continue
+        name = etree.QName(element).localname.lower()
+        if name in {'script', 'style', 'svg', 'metadata'}:
+            continue
+        if any(ancestor.get('data-AmznRemoved-M8') is not None for ancestor in element.iterancestors()):
+            continue
+        if element.get('data-AmznRemoved-M8') is not None:
+            continue
+        if name == 'img':
+            return True
+        if element.text and element.text.strip():
+            return True
+    return False
+
+
+def _chunk_has_reader_content(nodes) -> bool:
+    """Avoid emitting a generated split section CrossInk would render as empty."""
+    for node in nodes:
+        if not _is_element(node):
+            continue
+        for element in node.iter():
+            if not _is_element(element):
+                continue
+            name = etree.QName(element).localname.lower()
+            if name in {'script', 'style', 'svg', 'metadata'}:
+                continue
+            if element.get('data-AmznRemoved-M8') is not None or any(
+                ancestor.get('data-AmznRemoved-M8') is not None for ancestor in element.iterancestors()
+            ):
+                continue
+            if name == 'img' or (element.text and element.text.strip()):
+                return True
+    return False
+
+
+def _rewrite_spine_reference(value: str, source_path: Path, redirects: dict[str, str], opf_dir: Path) -> str:
+    if not value or value.startswith('#') or re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*:', value):
+        return value
+    target, separator, fragment = value.partition('#')
+    try:
+        resolved = posixpath.normpath(str((source_path.parent / unquote(target)).relative_to(opf_dir)))
+    except ValueError:
+        return value
+    replacement = redirects.get(resolved)
+    if replacement is None:
+        return value
+    rewritten = os.path.relpath(opf_dir / replacement, source_path.parent).replace(os.sep, '/')
+    return rewritten + (separator + fragment if separator else '')
+
+
+def collapse_reader_empty_spine_items(opf_path: str) -> int:
+    """Remove converter-created decorative-only spine stubs and redirect their links."""
+    tree = etree.parse(opf_path)
+    root = tree.getroot()
+    manifest = _find_element(root, 'manifest')
+    spine = _find_element(root, 'spine')
+    if manifest is None or spine is None:
+        return 0
+    opf_dir = Path(opf_path).parent
+    manifest_by_id = {item.get('id'): item for item in _find_elements(root, 'item') if item.get('id')}
+    entries = []
+    for ref in _find_elements(spine, 'itemref'):
+        item = manifest_by_id.get(ref.get('idref'))
+        if item is None:
+            continue
+        href = unquote((item.get('href') or '').split('#')[0])
+        if href.lower().endswith(('.xhtml', '.html', '.htm')):
+            entries.append((ref, href, opf_dir / href))
+
+    redirects: dict[str, str] = {}
+    refs_to_remove = []
+    for index, (ref, href, path) in enumerate(entries[:-1]):
+        _, successor_href, successor_path = entries[index + 1]
+        if _has_reader_content(path) or not _has_reader_content(successor_path):
+            continue
+        identity = _body_reader_identity(path)
+        if identity is None or identity != _body_reader_identity(successor_path):
+            continue
+        redirects[Path(href).as_posix()] = Path(successor_href).as_posix()
+        refs_to_remove.append(ref)
+
+    if not refs_to_remove:
+        return 0
+    for ref in refs_to_remove:
+        spine.remove(ref)
+    tree.write(opf_path, xml_declaration=True, encoding='utf-8', pretty_print=True)
+
+    for resource in opf_dir.rglob('*'):
+        if resource.suffix.lower() not in {'.xhtml', '.html', '.htm', '.ncx'}:
+            continue
+        try:
+            document = etree.parse(str(resource), etree.XMLParser(recover=True, resolve_entities=False))
+        except (OSError, etree.XMLSyntaxError):
+            continue
+        changed = False
+        for element in document.getroot().iter():
+            if not _is_element(element):
+                continue
+            for attribute in ('href', 'src', f'{{{NS_XLINK}}}href'):
+                value = element.get(attribute)
+                rewritten = _rewrite_spine_reference(value, resource, redirects, opf_dir) if value else value
+                if rewritten != value:
+                    element.set(attribute, rewritten)
+                    changed = True
+        if changed:
+            document.write(str(resource), xml_declaration=True, encoding='utf-8', pretty_print=True)
+    return len(refs_to_remove)
 
 
 def _split_base_href(href: str) -> str:
@@ -284,6 +423,17 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
 
         if current:
             chunks.append(current)
+        merged_chunks = []
+        pending = []
+        for chunk in chunks:
+            if _chunk_has_reader_content(chunk):
+                merged_chunks.append(pending + chunk)
+                pending = []
+            else:
+                pending.extend(chunk)
+        if pending and merged_chunks:
+            merged_chunks[-1].extend(pending)
+        chunks = merged_chunks
         if len(chunks) < 2:
             continue
 

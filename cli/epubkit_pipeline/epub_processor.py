@@ -38,7 +38,7 @@ from epub_structure import (
     update_xhtml_references, update_css_references,
     fix_svg_covers, fix_toc, find_content_files, add_image_to_opf,
     write_crossink_location_manifest, write_crossink_optimizer_manifest,
-    remove_css_from_opf, remove_css_files_from_opf, split_long_sections
+    remove_css_from_opf, remove_css_files_from_opf, split_long_sections, collapse_reader_empty_spine_items
 )
 
 
@@ -91,6 +91,7 @@ class ProcessingReport:
     svg_covers_fixed: int = 0
     toc_status: str = ''
     metadata_items_stripped: int = 0
+    empty_spine_items_collapsed: int = 0
     whitespace_cleaned: int = 0
     attrs_stripped: int = 0
     text_fixes_total: int = 0
@@ -134,6 +135,8 @@ class ProcessingReport:
 
         if self.metadata_items_stripped > 0:
             parts.append(f"Stripped {self.metadata_items_stripped} store metadata entries")
+        if self.empty_spine_items_collapsed > 0:
+            parts.append(f"Collapsed {self.empty_spine_items_collapsed} empty chapter stubs")
 
         if self.whitespace_cleaned > 0:
             parts.append(f"Cleaned {self.whitespace_cleaned} empty elements")
@@ -505,6 +508,10 @@ def process_epub(input_path: str, output_path: str,
             for css_path in content_files['css']:
                 if os.path.exists(css_path):
                     update_css_references(css_path, rename_map)
+
+        # Collapse Kindle/Calibre decorative stubs before stripping the marker that
+        # tells the reader these fallback images are not real chapter content.
+        report.empty_spine_items_collapsed = collapse_reader_empty_spine_items(opf_path)
 
         # Step 11: Repair HTML + strip unnecessary attributes (70%)
         _progress(70, "Repairing HTML...")

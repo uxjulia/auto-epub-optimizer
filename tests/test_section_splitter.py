@@ -11,6 +11,7 @@ PIPELINE_DIR = Path(__file__).resolve().parents[1] / 'cli' / 'epubkit_pipeline'
 sys.path.insert(0, str(PIPELINE_DIR))
 
 from epub_structure import (  # noqa: E402
+    collapse_reader_empty_spine_items,
     SECTION_SPLIT_BYTE_THRESHOLD,
     SECTION_SPLIT_HARD_BYTE_LIMIT,
     SECTION_SPLIT_WORD_THRESHOLD,
@@ -85,6 +86,38 @@ class SectionSplitterTests(unittest.TestCase):
         self.assertEqual(manifest['sourceSpineMap']['spineCount'], 2)
         self.assertEqual([entry['sourceSpineIndex'] for entry in manifest['sourceSpineMap']['spine']], [0, 0, 1])
         self.assertEqual(manifest['sourceSpineMap']['spine'][1]['containerDepth'], 1)
+
+    def test_collapses_kindles_decorative_empty_spine_stub_and_rewrites_ncx(self):
+        opf_dir = self.tmpdir / 'OEBPS'
+        text_dir = opf_dir / 'text'
+        text_dir.mkdir(parents=True)
+        opf_path = opf_dir / 'content.opf'
+        (text_dir / 'chapter_split_000.xhtml').write_text(
+            '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter 1</title></head>'
+            '<body id="chapter-1"><div data-AmznRemoved-M8="true"><img src="old.gif"/></div></body></html>',
+            encoding='utf-8',
+        )
+        (text_dir / 'chapter_split_001.xhtml').write_text(
+            '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter 1</title></head>'
+            '<body id="chapter-1"><h1>Chapter 1</h1><p>Readable chapter text.</p></body></html>',
+            encoding='utf-8',
+        )
+        (opf_dir / 'toc.ncx').write_text(
+            '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"><navMap><navPoint>'
+            '<content src="text/chapter_split_000.xhtml#chapter-1"/></navPoint></navMap></ncx>',
+            encoding='utf-8',
+        )
+        opf_path.write_text(
+            '<package xmlns="http://www.idpf.org/2007/opf" version="2.0"><manifest>'
+            '<item id="stub" href="text/chapter_split_000.xhtml" media-type="application/xhtml+xml"/>'
+            '<item id="chapter" href="text/chapter_split_001.xhtml" media-type="application/xhtml+xml"/>'
+            '</manifest><spine><itemref idref="stub"/><itemref idref="chapter"/></spine></package>',
+            encoding='utf-8',
+        )
+
+        self.assertEqual(collapse_reader_empty_spine_items(str(opf_path)), 1)
+        self.assertNotIn('<itemref idref="stub"', opf_path.read_text(encoding='utf-8'))
+        self.assertIn('text/chapter_split_001.xhtml#chapter-1', (opf_dir / 'toc.ncx').read_text(encoding='utf-8'))
 
 
 if __name__ == '__main__':
