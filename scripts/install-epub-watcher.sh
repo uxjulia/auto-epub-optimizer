@@ -73,7 +73,7 @@ systemctl --user status epub-watcher.service --no-pager
 echo ""
 echo "=== Installation complete! ==="
 echo "Files placed in:  $EPUB_OUTPUT_DIR"
-echo "will be moved to: $WATCHER_DEST_DIR"
+echo "will be published to: $WATCHER_DEST_DIR"
 echo ""
 echo "Useful commands:"
 echo "  Check status:  systemctl --user status epub-watcher"
