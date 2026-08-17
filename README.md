@@ -45,7 +45,9 @@ The containers use fixed internal paths (`/bookdrop`, `/output`, `/destination`,
 
 #### Why two services?
 
-The optimizer writes finished EPUBs to an intermediate Docker volume (`output`), and the watcher moves them from there to `WATCHER_DEST_DIR`. This split exists because `inotify` is unreliable on Windows NTFS paths like `/mnt/c/...` inside Docker on WSL2. Keeping the handoff point on a Linux volume makes the watcher reliable.
+The optimizer writes finished EPUBs to an intermediate Docker volume (`output`), and the watcher publishes them from there to `WATCHER_DEST_DIR`. This split exists because `inotify` is unreliable on Windows NTFS paths like `/mnt/c/...` inside Docker on WSL2. Keeping the handoff point on a Linux volume makes the watcher reliable.
+
+For Windows-backed destinations, the watcher now stages each file under a temporary non-`.epub` name inside `WATCHER_DEST_DIR` and then renames it into place. That is the same pattern many Node apps use for "write temp file, then swap live", and it helps Windows-side folder watchers notice the finished book more consistently than a direct cross-filesystem move.
 
 If your `WATCHER_DEST_DIR` is a plain Linux path, you can remove the `epub-watcher` service and point `EPUB_OUTPUT_DIR` directly at the destination.
 
@@ -98,7 +100,7 @@ BOOKDROP_DIR  →[epub-optimizer]→  EPUB_OUTPUT_DIR  →[epub-watcher]→  WAT
 ```
 
 - **epub-optimizer** - polls a bookdrop folder for `.epub` files, runs `optimize.py` on each, and writes the result to an output folder. Uses polling instead of `inotify` so it works on Windows NTFS mounts (`/mnt/c/`) under WSL2.
-- **epub-watcher** - watches the output folder with `inotifywait` and moves finished files to a final destination (e.g. a Calibre/OPDS library folder).
+- **epub-watcher** - watches the output folder with `inotifywait` and publishes finished files to a final destination (e.g. a Calibre/OPDS library folder) using a temp-name-then-rename handoff that is friendlier to Windows watchers.
 
 ### 1. Configure
 
@@ -119,7 +121,7 @@ Edit `~/.config/epub-optimizer/.env`:
 | `OPTIMIZER_PYTHON`     | Python executable used to run the optimizer, e.g. `python3` or a virtualenv path                                                   |
 | `OPTIMIZER_SCRIPT`     | Absolute path to `cli/optimize.py` in this repo                                                                                    |
 | `EPUB_OUTPUT_DIR`      | Where the optimizer writes finished EPUBs                                                                                          |
-| `WATCHER_DEST_DIR`     | Where the watcher moves finished EPUBs (your final X4 library folder)                                                              |
+| `WATCHER_DEST_DIR`     | Where the watcher publishes finished EPUBs (your final X4 library folder)                                                          |
 | `OPTIMIZER_LOG_FILE`   | Log path for the optimizer service (default: `~/.local/log/epub-optimizer.log`)                                                    |
 | `WATCHER_LOG_FILE`     | Log path for the watcher service (default: `~/.local/log/epub-watcher.log`)                                                        |
 | `POLL_INTERVAL`        | Seconds between bookdrop scans (default: `5`)                                                                                      |
@@ -139,7 +141,7 @@ Edit `~/.config/epub-optimizer/.env`:
 Install the watcher first. `epub-optimizer.service` has `After=epub-watcher.service` in its unit file, so systemd expects the watcher unit to exist before the optimizer is registered.
 
 ```bash
-# Step 1: watcher (moves optimized files to their final destination)
+# Step 1: watcher (publishes optimized files to their final destination)
 ./scripts/install-epub-watcher.sh
 
 # Step 2: optimizer (polls bookdrop, runs optimize.py)
@@ -155,7 +157,7 @@ Each installer will:
 
 ### 3. Use
 
-Drop any `.epub` file into your `BOOKDROP_DIR`. The optimizer picks it up within `POLL_INTERVAL` seconds, copies the original to Calibre if configured, processes it, and the watcher moves the result to `WATCHER_DEST_DIR`.
+Drop any `.epub` file into your `BOOKDROP_DIR`. The optimizer picks it up within `POLL_INTERVAL` seconds, copies the original to Calibre if configured, processes it, and the watcher publishes the result to `WATCHER_DEST_DIR`.
 
 If you set `OPTIMIZE_ONLY_DIR`, files dropped there go through the same optimization flow but skip the Calibre copy entirely. This is useful for books that are already in your Calibre library and only need an optimized X4 copy.
 
