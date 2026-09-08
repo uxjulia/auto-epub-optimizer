@@ -87,6 +87,93 @@ class SectionSplitterTests(unittest.TestCase):
         self.assertEqual([entry['sourceSpineIndex'] for entry in manifest['sourceSpineMap']['spine']], [0, 0, 1])
         self.assertEqual(manifest['sourceSpineMap']['spine'][1]['containerDepth'], 1)
 
+    def test_split_prefers_nearby_authored_page_boundary(self):
+        opf_dir = self.tmpdir / 'OEBPS'
+        opf_dir.mkdir()
+        opf_path = opf_dir / 'content.opf'
+        (opf_dir / 'chapter.xhtml').write_text(
+            '<html xmlns="http://www.w3.org/1999/xhtml" '
+            'xmlns:epub="http://www.idpf.org/2007/ops"><body><div>'
+            '<p>one two three four five six seven eight</p>'
+            '<p>nine ten eleven twelve thirteen fourteen fifteen sixteen</p>'
+            '<p>seventeen <span epub:type="pagebreak"/>eighteen nineteen twenty twentyone twentytwo twentythree twentyfour</p>'
+            '</div></body></html>',
+            encoding='utf-8',
+        )
+        opf_path.write_text(
+            '<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><manifest>'
+            '<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>'
+            '</manifest><spine><itemref idref="chapter"/></spine></package>',
+            encoding='utf-8',
+        )
+
+        sections_split, split_parts = split_long_sections(
+            str(opf_path), word_threshold=10, byte_threshold=4096, hard_byte_limit=8192,
+        )
+
+        self.assertEqual((sections_split, split_parts), (1, 2))
+        first_part = (opf_dir / 'chapter.xhtml').read_text(encoding='utf-8')
+        second_part = (opf_dir / 'chapter__ci_section_002.xhtml').read_text(encoding='utf-8')
+        self.assertIn('nine ten eleven twelve', first_part)
+        self.assertNotIn('epub:type="pagebreak"', first_part)
+        self.assertIn('epub:type="pagebreak"', second_part)
+
+    def test_split_moves_a_trailing_heading_into_the_next_section(self):
+        opf_dir = self.tmpdir / 'OEBPS'
+        opf_dir.mkdir()
+        opf_path = opf_dir / 'content.opf'
+        (opf_dir / 'chapter.xhtml').write_text(
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body><div>'
+            '<p>one two three four five six seven eight</p>'
+            '<h2>New scene</h2>'
+            '<p>nine ten eleven twelve thirteen fourteen fifteen sixteen</p>'
+            '</div></body></html>',
+            encoding='utf-8',
+        )
+        opf_path.write_text(
+            '<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><manifest>'
+            '<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>'
+            '</manifest><spine><itemref idref="chapter"/></spine></package>',
+            encoding='utf-8',
+        )
+
+        sections_split, split_parts = split_long_sections(
+            str(opf_path), word_threshold=10, byte_threshold=4096, hard_byte_limit=8192,
+        )
+
+        self.assertEqual((sections_split, split_parts), (1, 2))
+        self.assertNotIn('<h2>New scene</h2>', (opf_dir / 'chapter.xhtml').read_text(encoding='utf-8'))
+        self.assertIn(
+            '<h2>New scene</h2>',
+            (opf_dir / 'chapter__ci_section_002.xhtml').read_text(encoding='utf-8'),
+        )
+
+    def test_split_does_not_choose_a_distant_heading(self):
+        opf_dir = self.tmpdir / 'OEBPS'
+        opf_dir.mkdir()
+        opf_path = opf_dir / 'content.opf'
+        paragraphs = ''.join(f'<p>{"word " * 350}</p>' for _ in range(24))
+        (opf_dir / 'chapter.xhtml').write_text(
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body><div>'
+            '<p>Start</p><h2>Early scene</h2>'
+            f'{paragraphs}'
+            '</div></body></html>',
+            encoding='utf-8',
+        )
+        opf_path.write_text(
+            '<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><manifest>'
+            '<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>'
+            '</manifest><spine><itemref idref="chapter"/></spine></package>',
+            encoding='utf-8',
+        )
+
+        sections_split, split_parts = split_long_sections(
+            str(opf_path), word_threshold=50000, byte_threshold=32768, hard_byte_limit=49152,
+        )
+
+        self.assertEqual((sections_split, split_parts), (1, 2))
+        self.assertIn('<h2>Early scene</h2>', (opf_dir / 'chapter.xhtml').read_text(encoding='utf-8'))
+
     def test_collapses_kindles_decorative_empty_spine_stub_and_rewrites_ncx(self):
         opf_dir = self.tmpdir / 'OEBPS'
         text_dir = opf_dir / 'text'

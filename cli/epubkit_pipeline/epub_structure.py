@@ -37,6 +37,9 @@ DEFAULT_CROSSINK_REFERENCE_CHARACTERS_PER_PAGE = 1500
 SECTION_SPLIT_WORD_THRESHOLD = 8000
 SECTION_SPLIT_BYTE_THRESHOLD = 32768
 SECTION_SPLIT_HARD_BYTE_LIMIT = 49152
+# Allow a small amount of headroom to reach an author-supplied page boundary.
+# The hard limit still bounds the reader's per-section work.
+SECTION_SPLIT_NATURAL_BOUNDARY_LOOKAHEAD_BYTES = 8192
 SECTION_SPLIT_SUFFIX_RE = re.compile(r'__ci_section_\d{3}(?=\.[^.]+$)', re.IGNORECASE)
 
 
@@ -282,6 +285,81 @@ def _is_heading_child(node) -> bool:
     return _is_element(node) and re.fullmatch(r'h[1-6]', etree.QName(node).localname.lower()) is not None
 
 
+def _has_natural_section_page_boundary(node) -> bool:
+    if not _is_element(node):
+        return False
+    for element in node.iter():
+        if not _is_element(element):
+            continue
+        name = etree.QName(element).localname.lower()
+        if name == 'hr':
+            return True
+        epub_type = element.get(f'{{{NS_EPUB}}}type') or element.get('epub:type') or ''
+        role = element.get('role') or ''
+        style = element.get('style') or ''
+        if (
+            re.search(r'(^|\s)pagebreak(\s|$)', epub_type, re.IGNORECASE) or
+            re.search(r'(^|\s)doc-pagebreak(\s|$)', role, re.IGNORECASE) or
+            re.search(
+                r'(?:^|;)\s*(?:-epub-)?(?:page-break|break)-(?:before|after)\s*:\s*'
+                r'(?:always|page|left|right|recto|verso)\b',
+                style,
+                re.IGNORECASE,
+            )
+        ):
+            return True
+    return False
+
+
+def _is_natural_section_split_boundary(previous, next_node) -> bool:
+    return (
+        _has_natural_section_page_boundary(previous) or
+        _has_natural_section_page_boundary(next_node) or
+        _is_heading_child(next_node)
+    )
+
+
+def _find_natural_section_split_index(split_children, candidate_index: int, current, current_bytes: int,
+                                      byte_threshold: int, hard_byte_limit: int) -> int:
+    byte_limit = min(
+        hard_byte_limit,
+        max(current_bytes, byte_threshold) + SECTION_SPLIT_NATURAL_BOUNDARY_LOOKAHEAD_BYTES,
+    )
+    projected_bytes = current_bytes
+    for index in range(candidate_index, len(split_children)):
+        if index > candidate_index:
+            projected_bytes += len(etree.tostring(split_children[index - 1], encoding='utf-8'))
+        if projected_bytes > byte_limit:
+            break
+        prior_nodes = current + split_children[candidate_index:index]
+        previous = next((node for node in reversed(prior_nodes) if _is_element(node)), None)
+        next_node = split_children[index]
+        can_break_before = (
+            previous is not None and _safe_split_child(next_node) and not _keeps_split_cluster(next_node) and
+            not _is_heading_child(previous)
+        )
+        if can_break_before and _is_natural_section_split_boundary(previous, next_node):
+            return index
+    return candidate_index
+
+
+def _find_natural_section_split_offset_in_current(current) -> int:
+    trailing_bytes = 0
+    for offset in range(len(current) - 1, 0, -1):
+        trailing_bytes += len(etree.tostring(current[offset], encoding='utf-8'))
+        if trailing_bytes > SECTION_SPLIT_NATURAL_BOUNDARY_LOOKAHEAD_BYTES:
+            break
+        previous = next((node for node in reversed(current[:offset]) if _is_element(node)), None)
+        next_node = current[offset]
+        can_break_before = (
+            previous is not None and _safe_split_child(next_node) and not _keeps_split_cluster(next_node) and
+            not _is_heading_child(previous)
+        )
+        if can_break_before and _is_natural_section_split_boundary(previous, next_node):
+            return offset
+    return -1
+
+
 def _keeps_split_cluster(node) -> bool:
     if not _is_element(node):
         return False
@@ -391,7 +469,9 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
         current = []
         current_words = 0
         current_bytes = fixed_bytes
-        for child in split_children:
+        child_index = 0
+        while child_index < len(split_children):
+            child = split_children[child_index]
             child_bytes = len(etree.tostring(child, encoding='utf-8'))
             child_words = _count_location_words(' '.join(child.itertext()))
             would_exceed = current and (
@@ -401,7 +481,34 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
                 current and _safe_split_child(child) and not _keeps_split_cluster(child) and
                 not _is_heading_child(current[-1])
             )
-            if would_exceed and can_break_before:
+            natural_split_offset = (
+                _find_natural_section_split_offset_in_current(current)
+                if would_exceed and current_bytes <= hard_byte_limit else -1
+            )
+            if natural_split_offset > 0:
+                chunks.append(current[:natural_split_offset])
+                current = current[natural_split_offset:]
+                current_words = sum(
+                    _count_location_words(' '.join(node.itertext())) for node in current if _is_element(node)
+                )
+                current_bytes = fixed_bytes + sum(len(etree.tostring(node, encoding='utf-8')) for node in current)
+            elif would_exceed and can_break_before:
+                natural_split_index = _find_natural_section_split_index(
+                    split_children, child_index, current, current_bytes, byte_threshold, hard_byte_limit,
+                )
+                if natural_split_index > child_index:
+                    for node in split_children[child_index:natural_split_index]:
+                        current.append(node)
+                        current_words += _count_location_words(' '.join(node.itertext()))
+                        current_bytes += len(etree.tostring(node, encoding='utf-8'))
+                    chunks.append(current)
+                    current = []
+                    current_words = 0
+                    current_bytes = fixed_bytes
+                    # Begin a new chunk at the selected natural boundary rather
+                    # than consuming the intervening nodes again.
+                    child_index = natural_split_index
+                    continue
                 chunks.append(current)
                 current = []
                 current_words = 0
@@ -420,6 +527,7 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
                 current = []
                 current_words = 0
                 current_bytes = fixed_bytes
+            child_index += 1
 
         if current:
             chunks.append(current)
