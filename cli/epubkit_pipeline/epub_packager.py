@@ -67,7 +67,7 @@ def package_epub(source_dir: str, output_path: str) -> None:
 
             for filename in sorted(files):
                 filepath = Path(root) / filename
-                arcname = str(filepath.relative_to(source))
+                arcname = filepath.relative_to(source).as_posix()
 
                 # Skip mimetype (already written)
                 if arcname == 'mimetype':
@@ -81,7 +81,10 @@ def package_epub(source_dir: str, output_path: str) -> None:
                 if filename in OS_ARTIFACTS:
                     continue
 
-                zf.write(str(filepath), arcname, compress_type=zipfile.ZIP_DEFLATED)
+                stored = arcname in {'META-INF/crossink/optimizer-v1.json',
+                                     'META-INF/crossink/optimizer-images-v1.idx'} or (
+                    arcname.startswith('META-INF/crossink/pxc/') and arcname.endswith('.pxc2'))
+                zf.write(str(filepath), arcname, compress_type=zipfile.ZIP_STORED if stored else zipfile.ZIP_DEFLATED)
 
 
 def remove_os_artifacts(directory: str) -> int:

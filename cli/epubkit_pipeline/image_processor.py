@@ -11,6 +11,10 @@ X4 specs (SSD1677 controller):
 
 import gzip
 import io
+try:
+    from .pxc_transport import encode_pxc2
+except ImportError:  # CLI also imports the pipeline as top-level modules.
+    from pxc_transport import encode_pxc2
 import struct
 from pathlib import Path
 from dataclasses import dataclass
@@ -154,7 +158,7 @@ def build_crossink_pxc_bytes(image_bytes: bytes) -> tuple[bytes, int, int]:
             packed[out] = byte
             out += 1
 
-    return bytes(packed), width, height
+    return encode_pxc2(bytes(packed)), width, height
 
 
 def _quantize_to_4_levels(img: Image.Image) -> Image.Image:

@@ -1,3 +1,7 @@
+try:
+    from .pxc_transport import encode_index, index_entries
+except ImportError:  # CLI also imports the pipeline as top-level modules.
+    from pxc_transport import encode_index, index_entries
 """
 EPUB structure handler for Xteink X4 EPUB Optimizer.
 Handles: OPF/NCX/XHTML reference updates, SVG cover fix, TOC repair/regeneration.
@@ -758,6 +762,7 @@ def write_crossink_optimizer_manifest(epub_dir: str, opf_path: str, image_cache_
             'inflatedBytes': inflated_size,
         })
 
+    image_cache_entries = index_entries(image_cache_entries)
     manifest = {
         'format': 'crossink-optimizer',
         'version': 1,
@@ -775,7 +780,9 @@ def write_crossink_optimizer_manifest(epub_dir: str, opf_path: str, image_cache_
 
     out_path = epub_root / CROSSINK_OPTIMIZER_MANIFEST_PATH
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(manifest, separators=(',', ':')), encoding='utf-8')
+    manifest_bytes = json.dumps(manifest, separators=(',', ':')).encode('utf-8')
+    out_path.write_bytes(manifest_bytes)
+    (out_path.parent / 'optimizer-images-v1.idx').write_bytes(encode_index(manifest_bytes, image_cache_entries))
     return len(image_cache_entries)
 
 

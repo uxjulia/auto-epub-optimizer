@@ -453,7 +453,7 @@ def process_epub(input_path: str, output_path: str,
                 if result.pxc_bytes and result.width > 0 and result.height > 0:
                     pxc_dir.mkdir(parents=True, exist_ok=True)
                     source_key = f"{os.path.relpath(new_path, work_dir)}:{result.width}x{result.height}"
-                    pxc_name = hashlib.sha1(source_key.encode('utf-8')).hexdigest()[:20] + '.pxc'
+                    pxc_name = hashlib.sha1(source_key.encode('utf-8')).hexdigest()[:20] + '.pxc2'
                     pxc_path = pxc_dir / pxc_name
                     pxc_path.write_bytes(result.pxc_bytes)
                     image_cache_entries.append({
@@ -461,6 +461,9 @@ def process_epub(input_path: str, output_path: str,
                         'pxc': Path(os.path.relpath(pxc_path, work_dir)).as_posix(),
                         'width': result.width,
                         'height': result.height,
+                        'pxcFormat': 'pxc2',
+                        'pxcBytes': len(result.pxc_bytes),
+                        'pixelCrc32': int.from_bytes(result.pxc_bytes[24:28], 'little'),
                     })
 
         # Step 8: Fix SVG covers (62%)
