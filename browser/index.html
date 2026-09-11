@@ -482,6 +482,17 @@
               >
             </div>
           </div>
+
+          <div class="setting">
+            <label>Cover Color</label>
+            <div class="toggle-row">
+              <label class="toggle">
+                <input type="checkbox" id="preserveCoverColor" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <span style="font-size: 0.85rem; color: #aaa">Keep the cover in color (resized to 480×792)</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -505,6 +516,8 @@
       let MAX_HEIGHT = 800;
       let JPEG_QUALITY = 85;
       let ENABLE_GRAYSCALE = true;
+      let PRESERVE_COVER_COLOR = true;
+      let currentCoverImagePath = null;
       let HANDEDNESS = "right";
       let OVERLAP_PERCENT = 5;
       let SPLIT_MODE = 0; // 0=None, 1=H-Split, 2=V-Split
@@ -1835,6 +1848,43 @@
         ctx.putImageData(imageData, 0, 0);
       }
 
+      async function findCoverImagePath(zip, entries) {
+        const container = zip.file("META-INF/container.xml");
+        let opfPath = null;
+        if (container) {
+          const match = (await container.async("text")).match(/<rootfile[^>]+full-path=["']([^"']+)["']/i);
+          if (match && zip.file(match[1])) opfPath = match[1];
+        }
+        if (!opfPath) opfPath = entries.find(([path, entry]) => !entry.dir && path.toLowerCase().endsWith(".opf"))?.[0];
+        const entry = opfPath && zip.file(opfPath);
+        if (!entry) return null;
+        const doc = new DOMParser().parseFromString(await entry.async("text"), "application/xml");
+        if (doc.getElementsByTagName("parsererror").length) return null;
+        const coverId = Array.from(doc.getElementsByTagName("meta"))
+          .find((meta) => meta.getAttribute("name") === "cover")
+          ?.getAttribute("content");
+        const items = Array.from(doc.getElementsByTagName("item"));
+        const coverItem = (coverId && items.find((item) => item.getAttribute("id") === coverId)) ||
+          items.find((item) => (item.getAttribute("properties") || "").split(/\s+/).includes("cover-image")) ||
+          items.find((item) => {
+          const properties = item.getAttribute("properties") || "";
+          const id = item.getAttribute("id") || "";
+          const href = item.getAttribute("href") || "";
+          return !properties.includes("cover-image") &&
+            (item.getAttribute("media-type") || "").startsWith("image/") && /cover/i.test(`${id} ${href}`);
+          });
+        const href = coverItem?.getAttribute("href");
+        if (!href) return null;
+        const base = opfPath.split("/");
+        base.pop();
+        for (const part of href.split("/")) {
+          if (!part || part === ".") continue;
+          if (part === "..") base.pop();
+          else base.push(part);
+        }
+        return base.join("/");
+      }
+
       const IMAGE_LOAD_TIMEOUT_MS = 30000;
 
       async function processImage(data, imageState = 0, imagePath = "") {
@@ -1852,6 +1902,27 @@
             URL.revokeObjectURL(url);
             const origW = img.width,
               origH = img.height;
+
+            if (PRESERVE_COVER_COLOR && imagePath === currentCoverImagePath) {
+              const scale = Math.min(1, 480 / origW, 792 / origH);
+              const width = Math.max(1, Math.round(origW * scale));
+              const height = Math.max(1, Math.round(origH * scale));
+              const canvas = document.createElement("canvas");
+              canvas.width = width;
+              canvas.height = height;
+              const context = canvas.getContext("2d");
+              context.imageSmoothingQuality = "high";
+              context.fillStyle = "#fff";
+              context.fillRect(0, 0, width, height);
+              context.drawImage(img, 0, 0, width, height);
+              const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", JPEG_QUALITY / 100));
+              const output = await blob.arrayBuffer();
+              resolve({
+                parts: [{ data: output, suffix: "", width, height, size: output.byteLength }],
+                meta: { origW, origH, origSize, wasSplit: false, rotated: false, finalW: width, finalH: height, finalSize: output.byteLength, imageState: 0 },
+              });
+              return;
+            }
 
             if (imageState === 1) {
               // H-Split: scale width to MAX_HEIGHT, rotate, split if needed
@@ -2237,6 +2308,7 @@
         let opfPath = null,
           opfContent = null,
           mainIdentifier = null;
+        currentCoverImagePath = await findCoverImagePath(zip, entries);
 
         if (zip.files["mimetype"]) {
           const mimetypeData = await zip.files["mimetype"].async("arraybuffer");
@@ -2732,6 +2804,7 @@
           parseInt(document.getElementById("maxHeight").value) || 800;
         JPEG_QUALITY = parseInt(document.getElementById("quality").value) || 85;
         ENABLE_GRAYSCALE = document.getElementById("grayscale").checked;
+        PRESERVE_COVER_COLOR = document.getElementById("preserveCoverColor").checked;
         HANDEDNESS = document.getElementById("handedness").value;
         OVERLAP_PERCENT =
           parseInt(document.getElementById("overlap").value) || 5;

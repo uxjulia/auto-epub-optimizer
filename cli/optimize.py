@@ -35,6 +35,7 @@ def main() -> int:
         "Settings: "
         f"quality={args.quality}% | "
         f"grayscale={args.grayscale} | "
+        f"preserve_cover_color={args.preserve_cover_color} | "
         f"contrast={args.contrast_boost} ({args.contrast_factor}x) | "
         f"4-level={args.eink_quantize} | "
         f"{args.max_width}x{args.max_height} | "
@@ -108,6 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o", "--output", default="./optimized", help="output directory")
     parser.add_argument("-q", "--quality", type=bounded_int(1, 100), default=70, help="JPEG quality 1-100")
     parser.add_argument("--no-grayscale", dest="grayscale", action="store_false", help="disable grayscale conversion")
+    parser.add_argument(
+        "--grayscale-cover",
+        dest="preserve_cover_color",
+        action="store_false",
+        help="also convert the cover image to grayscale",
+    )
     parser.add_argument(
         "--contrast",
         dest="contrast_arg",
@@ -191,6 +198,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.set_defaults(
         grayscale=True,
+        preserve_cover_color=True,
         eink_quantize=True,
         remove_fonts=True,
         remove_css=True,
@@ -238,6 +246,7 @@ def normalize_legacy_args(parser: argparse.ArgumentParser, args: argparse.Namesp
 def build_options(args: argparse.Namespace) -> ProcessingOptions:
     return ProcessingOptions(
         grayscale=args.grayscale,
+        preserve_cover_color=args.preserve_cover_color,
         contrast_boost=args.contrast_boost,
         contrast_factor=args.contrast_factor,
         quality=args.quality,
