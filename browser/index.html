@@ -397,14 +397,14 @@
           </div>
 
           <div class="setting">
-            <label>Words per Reference Page</label>
+            <label>Characters per Reference Page</label>
             <input
               type="number"
-              id="wordsPerReferencePage"
+              id="charactersPerReferencePage"
               min="1"
               max="10000"
               step="1"
-              value="275"
+              value="1500"
             />
           </div>
 
@@ -718,7 +718,7 @@
         '<style type="text/css">img,svg{max-width:100%;height:auto}body{overflow-wrap:break-word}table{max-width:100%;table-layout:fixed}pre,code{white-space:pre-wrap;word-wrap:break-word}*{box-sizing:border-box}</style>';
       const CROSSINK_LOCATION_MANIFEST_PATH = "META-INF/x-locations.json";
       const CROSSINK_LOCATION_WORDS_PER_UNIT = 64;
-      const CROSSINK_DEFAULT_REFERENCE_WORDS_PER_PAGE = 275;
+      const CROSSINK_DEFAULT_REFERENCE_CHARACTERS_PER_PAGE = 1500;
       const CSS_FLATTEN_MAX_GROWTH_RATIO = 0.1;
       const CSS_FLATTEN_MIN_GROWTH_BUDGET = 4096;
       const CSS_FLATTEN_MAX_GROWTH_BUDGET = 16384;
@@ -937,7 +937,7 @@
             doc
               .querySelectorAll("script,style,svg,metadata")
               .forEach((el) => el.remove());
-            return (doc.body || doc.documentElement).textContent || "";
+            return extractTextNodes(doc.body || doc.documentElement, doc);
           }
         } catch (e) {
           /* fall through */
@@ -948,7 +948,7 @@
           doc
             .querySelectorAll("script,style,svg,metadata")
             .forEach((el) => el.remove());
-          return (doc.body || doc.documentElement).textContent || "";
+          return extractTextNodes(doc.body || doc.documentElement, doc);
         } catch (e) {
           return xhtmlContent
             .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -956,6 +956,13 @@
             .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
             .replace(/<[^>]+>/g, " ");
         }
+      }
+
+      function extractTextNodes(root, doc) {
+        const text = [];
+        const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) text.push(walker.currentNode.nodeValue || "");
+        return text.join(" ");
       }
 
       function countLocationWords(text) {
@@ -972,6 +979,11 @@
         }
       }
 
+      function countReferenceCharacters(text) {
+        const normalized = text.replace(/\s+/g, " ").trim();
+        return Array.from(normalized).length;
+      }
+
       function resolveXhtmlContentForLocation(path, xhtmlFiles) {
         if (xhtmlFiles[path]) return xhtmlFiles[path];
         const decoded = decodeHref(path);
@@ -984,28 +996,29 @@
         return match ? match[1] : null;
       }
 
-      function normalizedWordsPerReferencePage(value) {
+      function normalizedCharactersPerReferencePage(value) {
         const parsed = parseInt(value, 10);
         return Number.isFinite(parsed)
           ? Math.max(1, Math.min(10000, parsed))
-          : CROSSINK_DEFAULT_REFERENCE_WORDS_PER_PAGE;
+          : CROSSINK_DEFAULT_REFERENCE_CHARACTERS_PER_PAGE;
       }
 
-      function buildCrossInkLocationManifest(opfContent, opfPath, xhtmlFiles, wordsPerReferencePage) {
-        wordsPerReferencePage = normalizedWordsPerReferencePage(wordsPerReferencePage);
+      function buildCrossInkLocationManifest(opfContent, opfPath, xhtmlFiles, charactersPerReferencePage) {
+        charactersPerReferencePage = normalizedCharactersPerReferencePage(charactersPerReferencePage);
         const spineHrefs = parseOpfSpineHrefs(opfContent, opfPath);
         if (spineHrefs.length === 0) return null;
 
         const spine = [];
         let totalWords = 0;
+        let totalCharacters = 0;
         let nextLocation = 1;
 
         for (let index = 0; index < spineHrefs.length; index++) {
           const href = spineHrefs[index];
           const content = resolveXhtmlContentForLocation(href, xhtmlFiles);
-          const wordCount = content
-            ? countLocationWords(extractLocationText(content))
-            : 0;
+          const visibleText = content ? extractLocationText(content) : "";
+          const wordCount = countLocationWords(visibleText);
+          const characterCount = countReferenceCharacters(visibleText);
           const locationCount = Math.ceil(
             wordCount / CROSSINK_LOCATION_WORDS_PER_UNIT,
           );
@@ -1013,12 +1026,12 @@
           const endLocation =
             locationCount > 0 ? nextLocation + locationCount - 1 : 0;
           const startReferencePage =
-            wordCount > 0
-              ? Math.floor(totalWords / wordsPerReferencePage) + 1
+            characterCount > 0
+              ? Math.floor(totalCharacters / charactersPerReferencePage) + 1
               : 0;
           const endReferencePage =
-            wordCount > 0
-              ? Math.ceil((totalWords + wordCount) / wordsPerReferencePage)
+            characterCount > 0
+              ? Math.ceil((totalCharacters + characterCount) / charactersPerReferencePage)
               : 0;
 
           spine.push({
@@ -1026,6 +1039,8 @@
             href,
             wordStart: totalWords,
             wordCount,
+            characterStart: totalCharacters,
+            characterCount,
             startLocation,
             endLocation,
             startReferencePage,
@@ -1033,6 +1048,7 @@
           });
 
           totalWords += wordCount;
+          totalCharacters += characterCount;
           nextLocation += locationCount;
         }
 
@@ -1041,12 +1057,14 @@
           version: 1,
           generator: "auto-epub-optimizer-browser",
           unit: "word",
+          referencePageUnit: "character",
           wordsPerLocation: CROSSINK_LOCATION_WORDS_PER_UNIT,
-          wordsPerReferencePage,
+          charactersPerReferencePage,
           totalWords,
+          totalCharacters,
           totalLocations: Math.max(0, nextLocation - 1),
           totalReferencePages: Math.ceil(
-            totalWords / wordsPerReferencePage,
+            totalCharacters / charactersPerReferencePage,
           ),
           spine,
         };
@@ -2709,7 +2727,7 @@
             t,
             opfPath,
             processedXhtmlFiles,
-            document.getElementById("wordsPerReferencePage")?.value,
+            document.getElementById("charactersPerReferencePage")?.value,
           );
           if (locationManifest) {
             out.file(
@@ -2859,8 +2877,10 @@
         OVERLAP_PERCENT =
           parseInt(document.getElementById("overlap").value) || 5;
         SPLIT_MODE = parseInt(document.getElementById("splitMode").value) || 0;
-        document.getElementById("wordsPerReferencePage").value =
-          normalizedWordsPerReferencePage(document.getElementById("wordsPerReferencePage").value);
+        document.getElementById("charactersPerReferencePage").value =
+          normalizedCharactersPerReferencePage(
+            document.getElementById("charactersPerReferencePage").value,
+          );
 
         convertBtn.disabled = true;
         convertBtn.textContent = "Converting…";
