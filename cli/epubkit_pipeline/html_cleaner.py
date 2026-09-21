@@ -23,6 +23,10 @@ FONT_MEDIA_TYPES = {
     'application/x-font-otf', 'application/font-sfnt',
 }
 HORIZONTAL_WHITESPACE = frozenset({' ', '\t', '\u00a0'})
+OCEAN_OF_PDF_URL_RE = re.compile(
+    r'(?:^|[/:.@])(?:www\.)?oceanofpdf(?:\.com)?(?:[/:?#]|$)', re.IGNORECASE
+)
+OCEAN_OF_PDF_TEXT_RE = re.compile(r'^oceanofpdf(?:com)?$', re.IGNORECASE)
 CSS_FLATTEN_MAX_GROWTH_RATIO = 0.10
 CSS_FLATTEN_MIN_GROWTH_BUDGET = 4096
 CSS_FLATTEN_MAX_GROWTH_BUDGET = 16384
@@ -80,6 +84,80 @@ def repair_html(html_bytes: bytes) -> bytes:
     # Re-serialize as XHTML
     result = etree.tostring(tree, encoding='unicode', pretty_print=True, method='html')
     return result.encode('utf-8')
+
+
+def remove_oceanofpdf_containers(xhtml_bytes: bytes) -> tuple[bytes, int]:
+    """Remove standalone Ocean of PDF link/text containers from XHTML.
+
+    Match both known Ocean of PDF URLs and visible variants such as
+    ``OceanofPDF.com``.  When the marker is the only visible content of nested
+    wrappers, remove the outermost wrapper (rather than leaving an empty
+    paragraph or styled div behind).  A URL with non-marker link text falls
+    back to its nearest block container.
+    """
+    try:
+        tree = etree.fromstring(xhtml_bytes)
+    except etree.XMLSyntaxError:
+        parser = etree.HTMLParser(recover=True)
+        tree = etree.fromstring(xhtml_bytes, parser)
+        if tree is None:
+            return xhtml_bytes, 0
+
+    def is_marker_text(element) -> bool:
+        text = ''.join(element.itertext())
+        normalized = re.sub(r'[^a-z0-9]+', '', text.casefold())
+        return bool(OCEAN_OF_PDF_TEXT_RE.fullmatch(normalized))
+
+    def is_oceanofpdf_link(element) -> bool:
+        return bool(OCEAN_OF_PDF_URL_RE.search(element.get('href') or ''))
+
+    def removable_container(element):
+        marker_only = is_marker_text(element)
+        closest_block = None
+        outermost_marker_container = element if marker_only else None
+        parent = element.getparent()
+
+        while parent is not None and _local_name(parent.tag) not in ('body', 'html'):
+            if closest_block is None and _local_name(parent.tag) in {
+                'p', 'div', 'section', 'aside', 'li', 'blockquote', 'figure'
+            }:
+                closest_block = parent
+            if is_marker_text(parent):
+                outermost_marker_container = parent
+            parent = parent.getparent()
+
+        if outermost_marker_container is not None:
+            return outermost_marker_container
+        if closest_block is not None:
+            return closest_block
+        return element
+
+    candidates = set()
+    for element in tree.iter():
+        if not isinstance(element.tag, str):
+            continue
+        if is_oceanofpdf_link(element) or is_marker_text(element):
+            candidates.add(removable_container(element))
+
+    # Keep only outermost candidates so nested matches are counted once.
+    removable = [
+        candidate for candidate in candidates
+        if not any(
+            other is not candidate and candidate in other.iterdescendants()
+            for other in candidates
+        )
+    ]
+    removed = 0
+    for candidate in removable:
+        parent = candidate.getparent()
+        if parent is not None:
+            parent.remove(candidate)
+            removed += 1
+
+    if removed == 0:
+        return xhtml_bytes, 0
+    result = etree.tostring(tree, encoding='unicode', pretty_print=True)
+    return result.encode('utf-8'), removed
 
 
 def remove_unused_css(css_text: str, used_classes: set, used_ids: set, used_elements: set) -> tuple[str, int]:

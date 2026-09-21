@@ -23,7 +23,7 @@ from metadata_handler import (
 )
 from html_cleaner import (
     repair_html, remove_unused_css, collect_used_selectors, collect_stylesheet_links,
-    remove_stylesheet_links,
+    remove_stylesheet_links, remove_oceanofpdf_containers,
     remove_embedded_fonts_from_css, find_font_files, normalize_whitespace,
     add_chapter_page_breaks, strip_unnecessary_attributes,
     build_crossink_css_plan, flatten_crossink_css_in_xhtml,
@@ -98,6 +98,7 @@ class ProcessingReport:
     metadata_items_stripped: int = 0
     empty_spine_items_collapsed: int = 0
     whitespace_cleaned: int = 0
+    oceanofpdf_containers_removed: int = 0
     attrs_stripped: int = 0
     text_fixes_total: int = 0
     text_cleanup_summary: str = ''
@@ -145,6 +146,9 @@ class ProcessingReport:
 
         if self.whitespace_cleaned > 0:
             parts.append(f"Cleaned {self.whitespace_cleaned} empty elements")
+
+        if self.oceanofpdf_containers_removed > 0:
+            parts.append(f"Removed {self.oceanofpdf_containers_removed} Ocean of PDF containers")
 
         if self.attrs_stripped > 0:
             parts.append(f"Stripped {self.attrs_stripped} unnecessary attributes")
@@ -541,13 +545,16 @@ def process_epub(input_path: str, output_path: str,
         # tells the reader these fallback images are not real chapter content.
         report.empty_spine_items_collapsed = collapse_reader_empty_spine_items(opf_path)
 
-        # Step 11: Repair HTML + strip unnecessary attributes (70%)
+        # Step 11: Repair HTML, remove known download-site inserts, and strip
+        # unnecessary attributes (70%).
         _progress(70, "Repairing HTML...")
         for xhtml_path in content_files['xhtml']:
             if os.path.exists(xhtml_path):
                 with open(xhtml_path, 'rb') as f:
                     html_bytes = f.read()
                 repaired = repair_html(html_bytes)
+                repaired, oceanofpdf_removed = remove_oceanofpdf_containers(repaired)
+                report.oceanofpdf_containers_removed += oceanofpdf_removed
                 # Strip decorative attributes (data-*, aria-*, etc) for 380KB RAM device
                 repaired, stripped = strip_unnecessary_attributes(repaired)
                 report.attrs_stripped += stripped

@@ -1348,6 +1348,45 @@
         return removed;
       }
 
+      function removeOceanOfPdfContainers(doc) {
+        const oceanOfPdfUrl = /(?:^|[/:.@])(?:www\.)?oceanofpdf(?:\.com)?(?:[/:?#]|$)/i;
+        const isMarkerText = (element) =>
+          /^oceanofpdf(?:com)?$/i.test(
+            (element.textContent || "").toLowerCase().replace(/[^a-z0-9]+/g, ""),
+          );
+        const isOceanOfPdfLink = (element) =>
+          oceanOfPdfUrl.test(element.getAttribute("href") || "");
+        const isBlockContainer = (element) =>
+          ["p", "div", "section", "aside", "li", "blockquote", "figure"].includes(
+            element.localName.toLowerCase(),
+          );
+        const removableContainer = (element) => {
+          let closestBlock = null;
+          let outermostMarker = isMarkerText(element) ? element : null;
+          let parent = element.parentElement;
+          while (parent && !["body", "html"].includes(parent.localName.toLowerCase())) {
+            if (!closestBlock && isBlockContainer(parent)) closestBlock = parent;
+            if (isMarkerText(parent)) outermostMarker = parent;
+            parent = parent.parentElement;
+          }
+          return outermostMarker || closestBlock || element;
+        };
+
+        const candidates = new Set();
+        for (const element of [doc.documentElement, ...doc.getElementsByTagName("*")]) {
+          if (isOceanOfPdfLink(element) || isMarkerText(element))
+            candidates.add(removableContainer(element));
+        }
+        const removable = [...candidates].filter(
+          (candidate) =>
+            ![...candidates].some(
+              (other) => other !== candidate && other.contains(candidate),
+            ),
+        );
+        for (const element of removable) element.remove();
+        return removable.length;
+      }
+
       function removeCssManifestItemsFromOpf(opfText, originalContent) {
         try {
           const doc = new DOMParser().parseFromString(opfText, "application/xml");
@@ -2438,6 +2477,7 @@
         );
         let cssFlattenedElements = 0;
         let cssLinksRemoved = 0;
+        let oceanOfPdfContainersRemoved = 0;
 
         // Second pass: XHTML
         for (const [xhtmlPath, content] of Object.entries(xhtmlFiles)) {
@@ -2469,6 +2509,11 @@
                   img.removeAttribute("height");
                   modified = true;
                 }
+              }
+              const oceanOfPdfRemoved = removeOceanOfPdfContainers(doc);
+              if (oceanOfPdfRemoved > 0) {
+                oceanOfPdfContainersRemoved += oceanOfPdfRemoved;
+                modified = true;
               }
               if (Object.keys(splitImages).length > 0) {
                 const xhtmlDir = xhtmlPath.includes("/")
@@ -2624,6 +2669,11 @@
           logFix(
             "CSS flatten skipped",
             `${cssFlattenDecision.reason} (${cssFlattenDecision.addedBytes}B/${cssFlattenDecision.growthBudget}B)`,
+          );
+        if (oceanOfPdfContainersRemoved > 0)
+          logFix(
+            "Ocean of PDF",
+            `${oceanOfPdfContainersRemoved} containers removed`,
           );
 
         // OPF identifier
