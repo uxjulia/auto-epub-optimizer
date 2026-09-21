@@ -22,7 +22,9 @@ Use it in three ways:
 - Flattens CrossInk-supported CSS into inline XHTML styles so low-power devices do less stylesheet parsing
 
 # Usage/Installation
+
 There are four ways to install or use this workflow:
+
 1. [Docker](#docker-compose)
 2. [Systemd](#systemd-automated-watcher-linux--wsl2)
 3. [Manually via your local Browser](#browser-no-install-required)
@@ -113,28 +115,28 @@ cp .env.example ~/.config/epub-optimizer/.env
 
 Edit `~/.config/epub-optimizer/.env`:
 
-| Variable               | Description                                                                                                                        |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `BOOKDROP_DIR`         | Drop `.epub` files here to trigger processing                                                                                      |
-| `OPTIMIZE_ONLY_DIR`    | Optional second drop folder; files placed here skip the Calibre copy step and only go through optimization                         |
-| `CALIBRE_WATCH_FOLDER` | Optional - Calibre watch folder; files are copied here before optimization (for use when you want a separate workflow for Calibre) |
-| `OPTIMIZER_PYTHON`     | Python executable used to run the optimizer, e.g. `python3` or a virtualenv path                                                   |
-| `OPTIMIZER_SCRIPT`     | Absolute path to `cli/optimize.py` in this repo                                                                                    |
-| `EPUB_OUTPUT_DIR`      | Where the optimizer writes finished EPUBs                                                                                          |
-| `WATCHER_DEST_DIR`     | Where the watcher publishes finished EPUBs (your final X4 library folder)                                                          |
-| `OPTIMIZER_LOG_FILE`   | Log path for the optimizer service (default: `~/.local/log/epub-optimizer.log`)                                                    |
-| `WATCHER_LOG_FILE`     | Log path for the watcher service (default: `~/.local/log/epub-watcher.log`)                                                        |
-| `POLL_INTERVAL`        | Seconds between bookdrop scans (default: `5`)                                                                                      |
-| `KEEP_DAYS`            | Days to keep files in `bookdrop/processed/` before auto-deletion (default: `5`)                                                    |
-| `EPUB_QUALITY`         | Optional JPEG quality, default `70`                                                                                                |
-| `EPUB_MAX_WIDTH`       | Optional max image width, default `800`                                                                                            |
-| `EPUB_MAX_HEIGHT`      | Optional max image height, default `480`                                                                                           |
-| `EPUB_CONTRAST`        | Optional - set to `1` to enable contrast boost                                                                                     |
-| `EPUB_CONTRAST_FACTOR` | Optional contrast multiplier used when contrast boost is enabled, default `1.0`                                                     |
-| `EPUB_LIGHT_NOVEL`     | Optional - set to `1` to rotate/split landscape light-novel images                                                                 |
-| `EPUB_CHARACTERS_PER_REFERENCE_PAGE` | Optional character count used for generated CrossInk reference pages, default `1500`                                      |
-| `EPUB_FILENAME_FORMAT` | Optional output name pattern: `author-title`, `title-author`, or `title`                                                           |
-| `EPUB_SUFFIX`          | Optional suffix appended before `.epub`, e.g. `-optimized`                                                                         |
+| Variable                             | Description                                                                                                                        |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `BOOKDROP_DIR`                       | Drop `.epub` files here to trigger processing                                                                                      |
+| `OPTIMIZE_ONLY_DIR`                  | Optional second drop folder; files placed here skip the Calibre copy step and only go through optimization                         |
+| `CALIBRE_WATCH_FOLDER`               | Optional - Calibre watch folder; files are copied here before optimization (for use when you want a separate workflow for Calibre) |
+| `OPTIMIZER_PYTHON`                   | Python executable used to run the optimizer, e.g. `python3` or a virtualenv path                                                   |
+| `OPTIMIZER_SCRIPT`                   | Absolute path to `cli/optimize.py` in this repo                                                                                    |
+| `EPUB_OUTPUT_DIR`                    | Where the optimizer writes finished EPUBs                                                                                          |
+| `WATCHER_DEST_DIR`                   | Where the watcher publishes finished EPUBs (your final X4 library folder)                                                          |
+| `OPTIMIZER_LOG_FILE`                 | Log path for the optimizer service (default: `~/.local/log/epub-optimizer.log`)                                                    |
+| `WATCHER_LOG_FILE`                   | Log path for the watcher service (default: `~/.local/log/epub-watcher.log`)                                                        |
+| `POLL_INTERVAL`                      | Seconds between bookdrop scans (default: `5`)                                                                                      |
+| `KEEP_DAYS`                          | Days to keep files in `bookdrop/processed/` before auto-deletion (default: `5`)                                                    |
+| `EPUB_QUALITY`                       | Optional JPEG quality, default `70`                                                                                                |
+| `EPUB_MAX_WIDTH`                     | Optional max image width, default `800`                                                                                            |
+| `EPUB_MAX_HEIGHT`                    | Optional max image height, default `480`                                                                                           |
+| `EPUB_CONTRAST`                      | Optional - set to `1` to enable contrast boost                                                                                     |
+| `EPUB_CONTRAST_FACTOR`               | Optional contrast multiplier used when contrast boost is enabled, default `1.0`                                                    |
+| `EPUB_LIGHT_NOVEL`                   | Optional - set to `1` to rotate/split landscape light-novel images                                                                 |
+| `EPUB_CHARACTERS_PER_REFERENCE_PAGE` | Optional character count used for generated CrossInk reference pages, default `1500`                                               |
+| `EPUB_FILENAME_FORMAT`               | Optional output name pattern: `author-title`, `title-author`, or `title`                                                           |
+| `EPUB_SUFFIX`                        | Optional suffix appended before `.epub`, e.g. `-optimized`                                                                         |
 
 ### 2. Install
 
@@ -252,30 +254,30 @@ The output filename may be normalized from the EPUB's internal metadata or title
 
 ### Options
 
-| Flag                   | Default        | Description                               |
-| ---------------------- | -------------- | ----------------------------------------- |
-| `-o, --output <dir>`   | `./optimized`  | Output directory                          |
-| `-q, --quality <n>`    | `70`           | JPEG quality (1-100)                      |
-| `--no-grayscale`       | -              | Disable grayscale conversion              |
-| `--contrast`           | -              | Enable contrast boost                     |
-| `-c, --contrast-factor <n>` | `1.0`     | Contrast multiplier used with `--contrast` |
-| `--no-eink-quantize`   | -              | Disable 4-level e-ink quantization        |
-| `-W, --max-width <n>`  | `800`          | Max image width in px                     |
-| `-H, --max-height <n>` | `480`          | Max image height in px                    |
-| `--light-novel`        | -              | Rotate/split landscape light-novel images |
-| `--no-remove-fonts`    | -              | Keep embedded fonts                       |
-| `--no-remove-css`      | -              | Keep unused CSS                           |
-| `--no-generate-cover`  | -              | Do not generate missing cover art         |
-| `--no-clean-metadata`  | -              | Keep store-specific metadata              |
-| `--no-text-cleanup`    | -              | Disable text cleanup                      |
-| `--normalize-quotes`   | -              | Convert curly quotes to straight quotes   |
-| `--normalize-dashes`   | -              | Convert em/en dashes to ASCII dashes      |
-| `--no-normalize-ellipsis` | -           | Keep ellipsis characters unchanged        |
-| `--characters-per-reference-page <chars>` | `1500` | Character count used for generated CrossInk reference pages |
-| `--filename-format`    | `author-title` | Output filename pattern from metadata     |
-| `--suffix <str>`       | empty          | Suffix appended to output filename        |
-| `-v, --verbose`        | -              | Print progress and summary details        |
-| `--help`               | -              | Show help                                 |
+| Flag                                      | Default        | Description                                                 |
+| ----------------------------------------- | -------------- | ----------------------------------------------------------- |
+| `-o, --output <dir>`                      | `./optimized`  | Output directory                                            |
+| `-q, --quality <n>`                       | `70`           | JPEG quality (1-100)                                        |
+| `--no-grayscale`                          | -              | Disable grayscale conversion                                |
+| `--contrast`                              | -              | Enable contrast boost                                       |
+| `-c, --contrast-factor <n>`               | `1.0`          | Contrast multiplier used with `--contrast`                  |
+| `--no-eink-quantize`                      | -              | Disable 4-level e-ink quantization                          |
+| `-W, --max-width <n>`                     | `800`          | Max image width in px                                       |
+| `-H, --max-height <n>`                    | `480`          | Max image height in px                                      |
+| `--light-novel`                           | -              | Rotate/split landscape light-novel images                   |
+| `--no-remove-fonts`                       | -              | Keep embedded fonts                                         |
+| `--no-remove-css`                         | -              | Keep unused CSS                                             |
+| `--no-generate-cover`                     | -              | Do not generate missing cover art                           |
+| `--no-clean-metadata`                     | -              | Keep store-specific metadata                                |
+| `--no-text-cleanup`                       | -              | Disable text cleanup                                        |
+| `--normalize-quotes`                      | -              | Convert curly quotes to straight quotes                     |
+| `--normalize-dashes`                      | -              | Convert em/en dashes to ASCII dashes                        |
+| `--no-normalize-ellipsis`                 | -              | Keep ellipsis characters unchanged                          |
+| `--characters-per-reference-page <chars>` | `1500`         | Character count used for generated CrossInk reference pages |
+| `--filename-format`                       | `author-title` | Output filename pattern from metadata                       |
+| `--suffix <str>`                          | empty          | Suffix appended to output filename                          |
+| `-v, --verbose`                           | -              | Print progress and summary details                          |
+| `--help`                                  | -              | Show help                                                   |
 
 ### Pipeline
 
