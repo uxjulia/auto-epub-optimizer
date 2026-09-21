@@ -50,7 +50,7 @@ COVER_MAX_HEIGHT = 792
 class ProcessingOptions:
     """All user-configurable processing options."""
     grayscale: bool = True
-    preserve_cover_color: bool = True
+    preserve_cover_color: bool = False
     contrast_boost: bool = False
     contrast_factor: float = 1.0
     quality: int = 70

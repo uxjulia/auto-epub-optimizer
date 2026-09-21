@@ -80,6 +80,7 @@ process_drop_dir() {
     fi
     [ -n "$EPUB_CONTRAST_FACTOR" ] && optimizer_args+=("--contrast-factor" "$EPUB_CONTRAST_FACTOR")
     [ -n "$EPUB_NO_GRAYSCALE" ] && optimizer_args+=("--no-grayscale")
+    [ -n "$EPUB_PRESERVE_COVER_COLOR" ] && optimizer_args+=("--preserve-cover-color")
     [ -n "$EPUB_NO_REMOVE_FONTS" ] && optimizer_args+=("--no-remove-fonts")
     [ -n "$EPUB_NO_REMOVE_CSS" ] && optimizer_args+=("--no-remove-css")
     [ -n "$EPUB_LIGHT_NOVEL" ] && optimizer_args+=("--light-novel")

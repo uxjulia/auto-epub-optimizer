@@ -487,7 +487,7 @@
             <label>Cover Color</label>
             <div class="toggle-row">
               <label class="toggle">
-                <input type="checkbox" id="preserveCoverColor" checked />
+                <input type="checkbox" id="preserveCoverColor" />
                 <span class="toggle-slider"></span>
               </label>
               <span style="font-size: 0.85rem; color: #aaa">Keep the cover in color (resized to 480×792)</span>
@@ -516,8 +516,8 @@
       let MAX_HEIGHT = 800;
       let JPEG_QUALITY = 85;
       let ENABLE_GRAYSCALE = true;
-      let PRESERVE_COVER_COLOR = true;
-      let currentCoverImagePath = null;
+      let PRESERVE_COVER_COLOR = false;
+      let currentCoverImagePaths = new Set();
       let HANDEDNESS = "right";
       let OVERLAP_PERCENT = 5;
       let SPLIT_MODE = 0; // 0=None, 1=H-Split, 2=V-Split
@@ -1368,10 +1368,15 @@
 
       function removeOceanOfPdfContainers(doc) {
         const oceanOfPdfUrl = /(?:^|[/:.@])(?:www\.)?oceanofpdf(?:\.com)?(?:[/:?#]|$)/i;
-        const isMarkerText = (element) =>
-          /^oceanofpdf(?:com)?$/i.test(
+        const containsMedia = (element) => Boolean(element.querySelector("img, image, svg, video, audio"));
+        const isMarkerText = (element) => {
+          // Image alt text is absent from textContent, so an image-only cover
+          // with a footer must not be treated as a marker-only page.
+          if (containsMedia(element)) return false;
+          return /^oceanofpdf(?:com)?$/i.test(
             (element.textContent || "").toLowerCase().replace(/[^a-z0-9]+/g, ""),
           );
+        };
         const isOceanOfPdfLink = (element) =>
           oceanOfPdfUrl.test(element.getAttribute("href") || "");
         const isBlockContainer = (element) =>
@@ -1392,8 +1397,10 @@
 
         const candidates = new Set();
         for (const element of [doc.documentElement, ...doc.getElementsByTagName("*")]) {
-          if (isOceanOfPdfLink(element) || isMarkerText(element))
-            candidates.add(removableContainer(element));
+          if (isOceanOfPdfLink(element) || isMarkerText(element)) {
+            const candidate = removableContainer(element);
+            if (!containsMedia(candidate)) candidates.add(candidate);
+          }
         }
         const removable = [...candidates].filter(
           (candidate) =>
@@ -1905,7 +1912,7 @@
         ctx.putImageData(imageData, 0, 0);
       }
 
-      async function findCoverImagePath(zip, entries) {
+      async function findCoverImagePaths(zip, entries) {
         const container = zip.file("META-INF/container.xml");
         let opfPath = null;
         if (container) {
@@ -1914,9 +1921,9 @@
         }
         if (!opfPath) opfPath = entries.find(([path, entry]) => !entry.dir && path.toLowerCase().endsWith(".opf"))?.[0];
         const entry = opfPath && zip.file(opfPath);
-        if (!entry) return null;
+        if (!entry) return new Set();
         const doc = new DOMParser().parseFromString(await entry.async("text"), "application/xml");
-        if (doc.getElementsByTagName("parsererror").length) return null;
+        if (doc.getElementsByTagName("parsererror").length) return new Set();
         const coverId = Array.from(doc.getElementsByTagName("meta"))
           .find((meta) => meta.getAttribute("name") === "cover")
           ?.getAttribute("content");
@@ -1930,16 +1937,48 @@
           return !properties.includes("cover-image") &&
             (item.getAttribute("media-type") || "").startsWith("image/") && /cover/i.test(`${id} ${href}`);
           });
+        const resolveEpubPath = (basePath, href) => {
+          const base = basePath.split("/");
+          base.pop();
+          for (const part of href.split("/")) {
+            if (!part || part === ".") continue;
+            if (part === "..") base.pop();
+            else base.push(part);
+          }
+          return base.join("/");
+        };
+        const coverPaths = new Set();
         const href = coverItem?.getAttribute("href");
-        if (!href) return null;
-        const base = opfPath.split("/");
-        base.pop();
-        for (const part of href.split("/")) {
-          if (!part || part === ".") continue;
-          if (part === "..") base.pop();
-          else base.push(part);
+        if (href) coverPaths.add(resolveEpubPath(opfPath, href.split("#")[0]));
+        const coverPagePaths = new Set(
+          items
+            .filter((item) => /(?:xhtml|html)/i.test(item.getAttribute("media-type") || "") &&
+              /cover/i.test(`${item.getAttribute("id") || ""} ${item.getAttribute("href") || ""}`))
+            .map((item) => resolveEpubPath(opfPath, (item.getAttribute("href") || "").split("#")[0])),
+        );
+        for (const reference of Array.from(doc.getElementsByTagName("reference"))) {
+          if ((reference.getAttribute("type") || "").toLowerCase() === "cover") {
+            const pageHref = reference.getAttribute("href");
+            if (pageHref) coverPagePaths.add(resolveEpubPath(opfPath, pageHref.split("#")[0]));
+          }
         }
-        return base.join("/");
+        if (coverPaths.size > 0) {
+          const firstSpineId = doc.getElementsByTagName("itemref")[0]?.getAttribute("idref");
+          const firstSpineItem = firstSpineId && items.find((item) => item.getAttribute("id") === firstSpineId);
+          const firstSpineHref = firstSpineItem?.getAttribute("href");
+          if (firstSpineHref) coverPagePaths.add(resolveEpubPath(opfPath, firstSpineHref.split("#")[0]));
+        }
+        for (const pagePath of coverPagePaths) {
+          const page = zip.file(pagePath);
+          if (!page) continue;
+          const pageDoc = new DOMParser().parseFromString(await page.async("text"), "application/xhtml+xml");
+          if (pageDoc.getElementsByTagName("parsererror").length) continue;
+          for (const image of Array.from(pageDoc.querySelectorAll("img, image"))) {
+            const imageHref = image.getAttribute("src") || image.getAttribute("href") || image.getAttribute("xlink:href");
+            if (imageHref) coverPaths.add(resolveEpubPath(pagePath, imageHref.split("#")[0]));
+          }
+        }
+        return coverPaths;
       }
 
       const IMAGE_LOAD_TIMEOUT_MS = 30000;
@@ -1960,7 +1999,7 @@
             const origW = img.width,
               origH = img.height;
 
-            if (PRESERVE_COVER_COLOR && imagePath === currentCoverImagePath) {
+            if (PRESERVE_COVER_COLOR && currentCoverImagePaths.has(imagePath)) {
               const scale = Math.min(1, 480 / origW, 792 / origH);
               const width = Math.max(1, Math.round(origW * scale));
               const height = Math.max(1, Math.round(origH * scale));
@@ -2365,7 +2404,7 @@
         let opfPath = null,
           opfContent = null,
           mainIdentifier = null;
-        currentCoverImagePath = await findCoverImagePath(zip, entries);
+        currentCoverImagePaths = await findCoverImagePaths(zip, entries);
 
         if (zip.files["mimetype"]) {
           const mimetypeData = await zip.files["mimetype"].async("arraybuffer");

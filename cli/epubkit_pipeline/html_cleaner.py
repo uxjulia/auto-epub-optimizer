@@ -104,9 +104,22 @@ def remove_oceanofpdf_containers(xhtml_bytes: bytes) -> tuple[bytes, int]:
             return xhtml_bytes, 0
 
     def is_marker_text(element) -> bool:
+        # Image alt text is absent from itertext(), so an image-only cover plus
+        # an OceanofPDF footer would otherwise look like a marker-only body.
+        if any(
+            _local_name(child.tag) in {'img', 'image', 'svg', 'video', 'audio'}
+            for child in element.iter()
+        ):
+            return False
         text = ''.join(element.itertext())
         normalized = re.sub(r'[^a-z0-9]+', '', text.casefold())
         return bool(OCEAN_OF_PDF_TEXT_RE.fullmatch(normalized))
+
+    def contains_media(element) -> bool:
+        return any(
+            _local_name(child.tag) in {'img', 'image', 'svg', 'video', 'audio'}
+            for child in element.iter()
+        )
 
     def is_oceanofpdf_link(element) -> bool:
         return bool(OCEAN_OF_PDF_URL_RE.search(element.get('href') or ''))
@@ -137,7 +150,9 @@ def remove_oceanofpdf_containers(xhtml_bytes: bytes) -> tuple[bytes, int]:
         if not isinstance(element.tag, str):
             continue
         if is_oceanofpdf_link(element) or is_marker_text(element):
-            candidates.add(removable_container(element))
+            candidate = removable_container(element)
+            if not contains_media(candidate):
+                candidates.add(candidate)
 
     # Keep only outermost candidates so nested matches are counted once.
     removable = [

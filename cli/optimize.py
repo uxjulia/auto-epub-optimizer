@@ -110,6 +110,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-q", "--quality", type=bounded_int(1, 100), default=70, help="JPEG quality 1-100")
     parser.add_argument("--no-grayscale", dest="grayscale", action="store_false", help="disable grayscale conversion")
     parser.add_argument(
+        "--preserve-cover-color",
+        dest="preserve_cover_color",
+        action="store_true",
+        help="keep the cover image in color",
+    )
+    parser.add_argument(
         "--grayscale-cover",
         dest="preserve_cover_color",
         action="store_false",
@@ -198,7 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.set_defaults(
         grayscale=True,
-        preserve_cover_color=True,
+        preserve_cover_color=False,
         eink_quantize=True,
         remove_fonts=True,
         remove_css=True,

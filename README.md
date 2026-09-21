@@ -134,6 +134,7 @@ Edit `~/.config/epub-optimizer/.env`:
 | `EPUB_CONTRAST`                      | Optional - set to `1` to enable contrast boost                                                                                     |
 | `EPUB_CONTRAST_FACTOR`               | Optional contrast multiplier used when contrast boost is enabled, default `1.0`                                                    |
 | `EPUB_LIGHT_NOVEL`                   | Optional - set to `1` to rotate/split landscape light-novel images                                                                 |
+| `EPUB_PRESERVE_COVER_COLOR`          | Optional - set to `1` to keep the cover in color; covers are grayscale by default                                                  |
 | `EPUB_CHARACTERS_PER_REFERENCE_PAGE` | Optional character count used for generated CrossInk reference pages, default `1500`                                               |
 | `EPUB_FILENAME_FORMAT`               | Optional output name pattern: `author-title`, `title-author`, or `title`                                                           |
 | `EPUB_SUFFIX`                        | Optional suffix appended before `.epub`, e.g. `-optimized`                                                                         |
@@ -259,6 +260,7 @@ The output filename may be normalized from the EPUB's internal metadata or title
 | `-o, --output <dir>`                      | `./optimized`  | Output directory                                            |
 | `-q, --quality <n>`                       | `70`           | JPEG quality (1-100)                                        |
 | `--no-grayscale`                          | -              | Disable grayscale conversion                                |
+| `--preserve-cover-color`                  | -              | Keep the cover image in color                               |
 | `--contrast`                              | -              | Enable contrast boost                                       |
 | `-c, --contrast-factor <n>`               | `1.0`          | Contrast multiplier used with `--contrast`                  |
 | `--no-eink-quantize`                      | -              | Disable 4-level e-ink quantization                          |
