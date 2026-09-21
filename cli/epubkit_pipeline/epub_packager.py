@@ -6,6 +6,7 @@ Handles: EPUB extraction, repackaging with correct mimetype-first ZIP structure,
 import os
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 # Files/dirs to exclude from packaged EPUB
 OS_ARTIFACTS = {
@@ -148,36 +149,30 @@ def is_valid_epub(epub_path: str) -> tuple[bool, str]:
 
 
 def has_drm(epub_path: str) -> bool:
-    """Check if an EPUB file contains DRM encryption."""
+    """Return whether an EPUB encrypts anything other than obfuscated fonts."""
+    font_obfuscation_algorithms = {
+        'http://www.idpf.org/2008/embedding',
+        'http://ns.adobe.com/pdf/enc#RC',
+    }
+    encryption_namespace = 'http://www.w3.org/2001/04/xmlenc#'
+
     try:
         with zipfile.ZipFile(epub_path, 'r') as zf:
             if 'META-INF/encryption.xml' in zf.namelist():
-                # Read encryption.xml to confirm it's actual DRM
                 enc_content = zf.read('META-INF/encryption.xml').decode('utf-8', errors='ignore')
-                # Font obfuscation is not DRM - check for actual encryption methods
-                if 'http://www.w3.org/2001/04/xmlenc' in enc_content:
-                    # Check if it's only font obfuscation
-                    if 'http://www.idpf.org/2008/embedding' in enc_content or \
-                       'http://ns.adobe.com/pdf/enc' in enc_content:
-                        # Could be font obfuscation only - check for other encryption
-                        if 'http://ns.adobe.com/adept' in enc_content or \
-                           'EncryptedData' in enc_content:
-                            # Count encrypted items - if only fonts, likely just obfuscation
-                            from lxml import etree
-                            try:
-                                tree = etree.fromstring(enc_content.encode('utf-8'))
-                                encrypted = tree.findall('.//{http://www.w3.org/2001/04/xmlenc#}EncryptedData')
-                                # If we have encrypted content files (not just fonts), it's DRM
-                                for item in encrypted:
-                                    cipher = item.find('.//{http://www.w3.org/2001/04/xmlenc#}CipherReference')
-                                    if cipher is not None:
-                                        uri = cipher.get('URI', '')
-                                        ext = Path(uri).suffix.lower()
-                                        if ext not in {'.ttf', '.otf', '.woff', '.woff2'}:
-                                            return True
-                            except Exception:
-                                return True
-                    else:
+                try:
+                    tree = ElementTree.fromstring(enc_content)
+                except ElementTree.ParseError:
+                    return True
+
+                encrypted_items = tree.findall(f'.//{{{encryption_namespace}}}EncryptedData')
+                for item in encrypted_items:
+                    method = item.find(f'{{{encryption_namespace}}}EncryptionMethod')
+                    algorithm = method.get('Algorithm') if method is not None else None
+
+                    # Publishers commonly give obfuscated font files a .dat extension,
+                    # so the encryption algorithm is the reliable signal, not the name.
+                    if algorithm not in font_obfuscation_algorithms:
                         return True
             return False
     except Exception:
