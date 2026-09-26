@@ -115,6 +115,8 @@ cp .env.example ~/.config/epub-optimizer/.env
 
 Edit `~/.config/epub-optimizer/.env`:
 
+For switch variables below, set `1` to enable them or leave them unset to keep the CLI default. A nonempty value such as `0` also enables a switch. `EPUB_SPLIT_LONG_SECTIONS=0` is the exception: it disables splitting.
+
 | Variable                             | Description                                                                                                                        |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `BOOKDROP_DIR`                       | Drop `.epub` files here to trigger processing                                                                                      |
@@ -132,12 +134,35 @@ Edit `~/.config/epub-optimizer/.env`:
 | `EPUB_MAX_WIDTH`                     | Optional max image width, default `800`                                                                                            |
 | `EPUB_MAX_HEIGHT`                    | Optional max image height, default `480`                                                                                           |
 | `EPUB_CONTRAST`                      | Optional - set to `1` to enable contrast boost                                                                                     |
+| `EPUB_NO_CONTRAST`                   | Disable contrast boost, overriding `EPUB_CONTRAST`                                                                                 |
 | `EPUB_CONTRAST_FACTOR`               | Optional contrast multiplier used when contrast boost is enabled, default `1.0`                                                    |
+| `EPUB_NO_GRAYSCALE`                  | Disable grayscale conversion                                                                                                       |
+| `EPUB_NO_EINK_QUANTIZE`              | Disable 4-level e-ink quantization                                                                                                 |
 | `EPUB_LIGHT_NOVEL`                   | Optional - set to `1` to rotate/split landscape light-novel images                                                                 |
+| `EPUB_SPLIT_MODE`                    | Compatibility mode: `none`, `h-split`, or `v-split`; either split value enables light-novel mode                                    |
+| `EPUB_ROTATE_RIGHT`                  | Rotate light-novel images right instead of left                                                                                    |
 | `EPUB_PRESERVE_COVER_COLOR`          | Optional - set to `1` to keep the cover in color; covers are grayscale by default                                                  |
+| `EPUB_GRAYSCALE_COVER`               | Convert the cover to grayscale; overrides `EPUB_PRESERVE_COVER_COLOR`                                                               |
+| `EPUB_NO_GENERATE_COVER`             | Do not generate missing cover art                                                                                                  |
+| `EPUB_NO_REMOVE_FONTS`               | Keep embedded fonts                                                                                                                |
+| `EPUB_NO_REMOVE_CSS`                 | Keep unused CSS                                                                                                                    |
+| `EPUB_NO_CLEAN_METADATA`             | Keep store metadata, including Calibre series information                                                                         |
+| `EPUB_NO_TEXT_CLEANUP`               | Disable text cleanup                                                                                                               |
+| `EPUB_NORMALIZE_QUOTES`              | Convert curly quotes to straight quotes                                                                                            |
+| `EPUB_KEEP_QUOTES`                   | Leave curly quotes unchanged; overrides `EPUB_NORMALIZE_QUOTES`                                                                    |
+| `EPUB_NORMALIZE_DASHES`              | Convert em/en dashes to ASCII dashes                                                                                                |
+| `EPUB_KEEP_DASHES`                   | Leave em/en dashes unchanged; overrides `EPUB_NORMALIZE_DASHES`                                                                    |
+| `EPUB_NO_NORMALIZE_ELLIPSIS`         | Keep ellipsis characters unchanged                                                                                                 |
 | `EPUB_CHARACTERS_PER_REFERENCE_PAGE` | Optional character count used for generated CrossInk reference pages, default `1500`                                               |
+| `EPUB_SPLIT_LONG_SECTIONS`           | Set to `0` to disable splitting oversized XHTML sections                                                                          |
+| `EPUB_SECTION_SPLIT_WORD_THRESHOLD` | Secondary visible-word safeguard for section splitting                                                                            |
+| `EPUB_SECTION_SPLIT_BYTE_THRESHOLD` | Target uncompressed HTML size for split sections                                                                                   |
+| `EPUB_SECTION_SPLIT_HARD_BYTE_LIMIT` | Safe-boundary maximum for split sections                                                                                            |
 | `EPUB_FILENAME_FORMAT`               | Optional output name pattern: `author-title`, `title-author`, or `title`                                                           |
 | `EPUB_SUFFIX`                        | Optional suffix appended before `.epub`, e.g. `-optimized`                                                                         |
+| `EPUB_VERBOSE`                       | Print progress and detailed summaries in the optimizer log                                                                        |
+
+To preserve Calibre series metadata in watcher output, add `EPUB_NO_CLEAN_METADATA=1` to your `.env`.
 
 ### 2. Install
 
@@ -261,21 +286,31 @@ The output filename may be normalized from the EPUB's internal metadata or title
 | `-q, --quality <n>`                       | `70`           | JPEG quality (1-100)                                        |
 | `--no-grayscale`                          | -              | Disable grayscale conversion                                |
 | `--preserve-cover-color`                  | -              | Keep the cover image in color                               |
+| `--grayscale-cover`                       | default        | Convert the cover image to grayscale                        |
 | `--contrast`                              | -              | Enable contrast boost                                       |
+| `--no-contrast`                           | default        | Disable contrast boost                                      |
 | `-c, --contrast-factor <n>`               | `1.0`          | Contrast multiplier used with `--contrast`                  |
 | `--no-eink-quantize`                      | -              | Disable 4-level e-ink quantization                          |
 | `-W, --max-width <n>`                     | `800`          | Max image width in px                                       |
 | `-H, --max-height <n>`                    | `480`          | Max image height in px                                      |
+| `--split <mode>`                          | `none`         | Compatibility mode; `h-split` or `v-split` enables light-novel mode |
 | `--light-novel`                           | -              | Rotate/split landscape light-novel images                   |
+| `--rotate-right`                          | -              | Rotate light-novel images right instead of left             |
 | `--no-remove-fonts`                       | -              | Keep embedded fonts                                         |
 | `--no-remove-css`                         | -              | Keep unused CSS                                             |
 | `--no-generate-cover`                     | -              | Do not generate missing cover art                           |
 | `--no-clean-metadata`                     | -              | Keep store-specific metadata                                |
 | `--no-text-cleanup`                       | -              | Disable text cleanup                                        |
 | `--normalize-quotes`                      | -              | Convert curly quotes to straight quotes                     |
+| `--keep-quotes`                           | default        | Leave curly quotes unchanged                                |
 | `--normalize-dashes`                      | -              | Convert em/en dashes to ASCII dashes                        |
+| `--keep-dashes`                           | default        | Leave em/en dashes unchanged                                |
 | `--no-normalize-ellipsis`                 | -              | Keep ellipsis characters unchanged                          |
 | `--characters-per-reference-page <chars>` | `1500`         | Character count used for generated CrossInk reference pages |
+| `--no-split-long-sections`                | -              | Do not split oversized XHTML sections                       |
+| `--section-split-word-threshold <n>`      | `8000`         | Secondary word limit for section splitting                  |
+| `--section-split-byte-threshold <n>`      | `32768`        | Target uncompressed size of split sections                  |
+| `--section-split-hard-byte-limit <n>`     | `49152`        | Maximum size at a safe split boundary                       |
 | `--filename-format`                       | `author-title` | Output filename pattern from metadata                       |
 | `--suffix <str>`                          | empty          | Suffix appended to output filename                          |
 | `-v, --verbose`                           | -              | Print progress and summary details                          |
@@ -283,7 +318,7 @@ The output filename may be normalized from the EPUB's internal metadata or title
 
 ### Pipeline
 
-The Python CLI uses the copied `epubkit` pipeline in `cli/epubkit_pipeline/`. It checks for DRM, extracts the EPUB safely, converts raster and SVG images to X4-friendly JPEGs, fixes SVG covers, optionally generates a missing cover, repairs HTML, strips unnecessary attributes, removes unused CSS/fonts, normalizes text and whitespace, cleans store metadata, repairs or generates the TOC, removes OS artifacts, and repackages with the EPUB `mimetype` entry first.
+The Python CLI uses the copied `epubkit` pipeline in `cli/epubkit_pipeline/`. It checks for DRM, extracts the EPUB safely, converts raster and SVG images to X4-friendly JPEGs, fixes SVG covers, optionally generates a missing cover, repairs HTML, strips unnecessary attributes, removes unused CSS/fonts, normalizes text and whitespace, optionally cleans store metadata, repairs or generates the TOC, removes OS artifacts, and repackages with the EPUB `mimetype` entry first.
 
 ### Examples
 
