@@ -484,6 +484,17 @@
           </div>
 
           <div class="setting">
+            <label for="removeEmbeddedFonts">Remove Embedded Fonts</label>
+            <div class="toggle-row">
+              <label class="toggle">
+                <input type="checkbox" id="removeEmbeddedFonts" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <span style="font-size: 0.85rem; color: #aaa">Use the reader's selected font</span>
+            </div>
+          </div>
+
+          <div class="setting">
             <label>Cover Color</label>
             <div class="toggle-row">
               <label class="toggle">
@@ -517,6 +528,7 @@
       let JPEG_QUALITY = 85;
       let ENABLE_GRAYSCALE = true;
       let PRESERVE_COVER_COLOR = false;
+      let REMOVE_EMBEDDED_FONTS = true;
       let currentCoverImagePaths = new Set();
       let HANDEDNESS = "right";
       let OVERLAP_PERCENT = 5;
@@ -1200,7 +1212,12 @@
 
             const body = css.slice(open + 1, close - 1);
             index = close;
-            if (!selectorText || selectorText.startsWith("@")) continue;
+            if (!selectorText) continue;
+            if (selectorText.startsWith("@")) {
+              // Keep font declarations when embedded font removal is turned off.
+              if (/^@font-face\b/i.test(selectorText)) canDropCssFiles = false;
+              continue;
+            }
 
             const declarations = parseCssDeclarationsForFlattening(body);
             if (declarations.length === 0) continue;
@@ -2369,6 +2386,105 @@
 
       // ── Main Conversion ──────────────────────────────────────────────────────────
 
+      // Strip complete @font-face blocks while respecting comments, quotes, and braces.
+      function stripEmbeddedFontRules(css) {
+        const tokens = /\/\*[\s\S]*?\*\/|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|@font-face\b|[{}]/gi;
+        let start = -1;
+        let depth = 0;
+        let cursor = 0;
+        let result = "";
+        for (const match of css.matchAll(tokens)) {
+          const token = match[0];
+          if (start < 0 && token.toLowerCase() === "@font-face") {
+            start = match.index;
+          } else if (start >= 0 && token === "{") {
+            depth++;
+          } else if (start >= 0 && token === "}" && --depth === 0) {
+            result += css.slice(cursor, start);
+            cursor = match.index + 1;
+            start = -1;
+          }
+        }
+        return result + css.slice(cursor);
+      }
+
+      async function removeEmbeddedFontsFromZip(zip) {
+        const fonts = new Set();
+        const fontExtension = /\.(?:ttf|otf|ttc|otc|woff2?|eot|cpfont)$/i;
+        const fontMediaType = /^(?:font\/|application\/(?:x-font|font|vnd\.ms-opentype|vnd\.ms-fontobject))|opentype|truetype/i;
+        const fontAlgorithms = new Set([
+          "http://www.idpf.org/2008/embedding",
+          "http://ns.adobe.com/pdf/enc#RC",
+        ]);
+        const resolveFontPath = (base, href) => {
+          let decoded = href.split(/[?#]/)[0];
+          try { decoded = decodeURIComponent(decoded); } catch (_) { /* Keep literal paths. */ }
+          const parts = (decoded.startsWith("/") ? decoded : base.slice(0, base.lastIndexOf("/") + 1) + decoded).split("/");
+          const normalized = [];
+          for (const part of parts) {
+            if (part === "..") normalized.pop();
+            else if (part && part !== ".") normalized.push(part);
+          }
+          return normalized.join("/");
+        };
+        for (const [path, entry] of Object.entries(zip.files)) {
+          if (!entry.dir && fontExtension.test(path)) fonts.add(path);
+        }
+        const packages = [];
+        for (const [path, entry] of Object.entries(zip.files)) {
+          if (entry.dir || !path.toLowerCase().endsWith(".opf")) continue;
+          const original = await safeReadText(entry);
+          const doc = new DOMParser().parseFromString(original, "application/xml");
+          if (doc.querySelector("parsererror")) throw new Error("Could not read EPUB font manifest");
+          packages.push({ path, original, doc });
+          for (const item of doc.getElementsByTagNameNS("*", "item")) {
+            const href = item.getAttribute("href") || "";
+            if (fontExtension.test(href) || fontMediaType.test(item.getAttribute("media-type") || "")) {
+              fonts.add(resolveFontPath(path, href));
+            }
+          }
+        }
+        const encryption = zip.file("META-INF/encryption.xml");
+        if (encryption) {
+          const original = await safeReadText(encryption);
+          const doc = new DOMParser().parseFromString(original, "application/xml");
+          if (doc.querySelector("parsererror")) throw new Error("Could not read EPUB font obfuscation metadata");
+          let changed = false;
+          for (const encrypted of [...doc.getElementsByTagNameNS("*", "EncryptedData")]) {
+            const algorithm = encrypted.getElementsByTagNameNS("*", "EncryptionMethod")[0]?.getAttribute("Algorithm");
+            const uri = encrypted.getElementsByTagNameNS("*", "CipherReference")[0]?.getAttribute("URI");
+            if (!uri) continue;
+            const path = resolveFontPath("", uri);
+            if (fontAlgorithms.has(algorithm)) fonts.add(path);
+            if (fonts.has(path)) { encrypted.remove(); changed = true; }
+          }
+          if (changed) {
+            if (doc.getElementsByTagNameNS("*", "EncryptedData").length) {
+              zip.file("META-INF/encryption.xml", safeSerialize(doc, original));
+            } else zip.remove("META-INF/encryption.xml");
+          }
+        }
+        for (const { path, original, doc } of packages) {
+          let changed = false;
+          for (const item of [...doc.getElementsByTagNameNS("*", "item")]) {
+            if (fonts.has(resolveFontPath(path, item.getAttribute("href") || ""))) {
+              item.remove(); changed = true;
+            }
+          }
+          if (changed) zip.file(path, safeSerialize(doc, original));
+        }
+        for (const path of fonts) zip.remove(path);
+        for (const [path, entry] of Object.entries(zip.files)) {
+          if (entry.dir || !/\.(?:css|xhtml|html|htm)$/i.test(path)) continue;
+          const original = await safeReadText(entry);
+          const cleaned = /\.css$/i.test(path)
+            ? stripEmbeddedFontRules(original)
+            : original.replace(/(<(?:[\w-]+:)?style\b[^>]*>)([\s\S]*?)(<\/(?:[\w-]+:)?style\s*>)/gi,
+                (_, open, css, close) => open + stripEmbeddedFontRules(css) + close);
+          if (cleaned !== original) zip.file(path, cleaned);
+        }
+      }
+
       async function convertEpubFile(file, progressCallback) {
         const startTime = Date.now();
         const originalSize = file.size;
@@ -2389,6 +2505,7 @@
         );
 
         const zip = await JSZip.loadAsync(file);
+        if (REMOVE_EMBEDDED_FONTS) await removeEmbeddedFontsFromZip(zip);
         const renamed = {};
         zip.forEach((p) => {
           if (p.toLowerCase().match(/\.(png|gif|webp|bmp|jpeg)$/))
@@ -2912,6 +3029,7 @@
         JPEG_QUALITY = parseInt(document.getElementById("quality").value) || 85;
         ENABLE_GRAYSCALE = document.getElementById("grayscale").checked;
         PRESERVE_COVER_COLOR = document.getElementById("preserveCoverColor").checked;
+        REMOVE_EMBEDDED_FONTS = document.getElementById("removeEmbeddedFonts").checked;
         HANDEDNESS = document.getElementById("handedness").value;
         OVERLAP_PERCENT =
           parseInt(document.getElementById("overlap").value) || 5;

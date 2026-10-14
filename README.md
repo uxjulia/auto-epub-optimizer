@@ -144,7 +144,7 @@ For switch variables below, set `1` to enable them or leave them unset to keep t
 | `EPUB_PRESERVE_COVER_COLOR`          | Optional - set to `1` to keep the cover in color; covers are grayscale by default                                                  |
 | `EPUB_GRAYSCALE_COVER`               | Convert the cover to grayscale; overrides `EPUB_PRESERVE_COVER_COLOR`                                                               |
 | `EPUB_NO_GENERATE_COVER`             | Do not generate missing cover art                                                                                                  |
-| `EPUB_NO_REMOVE_FONTS`               | Keep embedded fonts                                                                                                                |
+| `EPUB_NO_REMOVE_FONTS`               | Set to `1` to keep embedded fonts; removed by default when unset                                                                    |
 | `EPUB_NO_REMOVE_CSS`                 | Keep unused CSS                                                                                                                    |
 | `EPUB_NO_CLEAN_METADATA`             | Keep store metadata, including Calibre series information                                                                         |
 | `EPUB_NO_TEXT_CLEANUP`               | Disable text cleanup                                                                                                               |
@@ -296,7 +296,7 @@ The output filename may be normalized from the EPUB's internal metadata or title
 | `--split <mode>`                          | `none`         | Compatibility mode; `h-split` or `v-split` enables light-novel mode |
 | `--light-novel`                           | -              | Rotate/split landscape light-novel images                   |
 | `--rotate-right`                          | -              | Rotate light-novel images right instead of left             |
-| `--no-remove-fonts`                       | -              | Keep embedded fonts                                         |
+| `--no-remove-fonts`                       | -              | Keep embedded fonts (removed by default)                    |
 | `--no-remove-css`                         | -              | Keep unused CSS                                             |
 | `--no-generate-cover`                     | -              | Do not generate missing cover art                           |
 | `--no-clean-metadata`                     | -              | Keep store-specific metadata                                |

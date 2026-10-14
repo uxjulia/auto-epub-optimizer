@@ -9,6 +9,20 @@ optimize = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(optimize)
 
 
+class EmbeddedFontOptionTests(unittest.TestCase):
+    def test_embedded_fonts_are_removed_by_default(self):
+        parser = optimize.build_parser()
+        args = parser.parse_args(['book.epub'])
+        optimize.normalize_legacy_args(parser, args)
+        self.assertTrue(optimize.build_options(args).remove_fonts)
+
+    def test_no_remove_fonts_preserves_embedded_fonts(self):
+        parser = optimize.build_parser()
+        args = parser.parse_args(['--no-remove-fonts', 'book.epub'])
+        optimize.normalize_legacy_args(parser, args)
+        self.assertFalse(optimize.build_options(args).remove_fonts)
+
+
 class CoverColorOptionTests(unittest.TestCase):
     def test_cover_color_is_disabled_by_default(self):
         parser = optimize.build_parser()
